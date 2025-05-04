@@ -16,6 +16,7 @@
 
 package org.bson.codecs.record.codegen;
 
+import org.bson.BsonArray;
 import org.bson.BsonDocument;
 import org.bson.BsonDocumentReader;
 import org.bson.BsonDocumentWriter;
@@ -27,6 +28,8 @@ import org.bson.codecs.EncoderContext;
 import org.bson.codecs.configuration.CodecProvider;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
+
+import java.util.List;
 
 import static org.bson.conversions.Bson.DEFAULT_CODEC_REGISTRY;
 import static org.junit.jupiter.api.Assertions.assertEquals;
@@ -42,21 +45,35 @@ public class GeneratedRecordCodecProviderTest {
 
     @Test
     void testSimpleRecord() {
-        Codec<SimpleRecord> codec = provider.get(SimpleRecord.class, DEFAULT_CODEC_REGISTRY);
+        assertRoundTrip(
+                SimpleRecord.class,
+                new SimpleRecord("42", 1),
+                new BsonDocument("id", new BsonString("42")).append("val", new BsonInt32(1)));
+    }
 
-        assertEquals(SimpleRecord.class, codec.getEncoderClass());
+    @Test
+    void testAnnotatedRecord() {
+         assertRoundTrip(AnnotatedRecord.class,
+                 new AnnotatedRecord("Liz", 56, List.of("programming", "pottery"), "42"),
+         new BsonDocument("name", new BsonString("Liz")).append("a", new BsonInt32(56))
+                 .append("hobbies", new BsonArray(List.of(new BsonString("programming"), new BsonString("pottery"))))
+                 .append("_id", new BsonString("42")));
+    }
+
+    private <T> void assertRoundTrip(Class<T> recordClass, T record, BsonDocument expectedDocument) {
+        Codec<T> codec = provider.get(recordClass, DEFAULT_CODEC_REGISTRY);
+
+        assertEquals(recordClass, codec.getEncoderClass());
 
         BsonDocument encodedDocument = new BsonDocument();
         BsonDocumentWriter writer = new BsonDocumentWriter(encodedDocument);
-        SimpleRecord record = new SimpleRecord("42", 1);
         codec.encode(writer, record, EncoderContext.builder().build());
 
-        assertEquals(
-                new BsonDocument("id", new BsonString("42")).append("val", new BsonInt32(1)),
-                encodedDocument);
+        assertEquals(expectedDocument, encodedDocument);
 
         BsonDocumentReader reader = new BsonDocumentReader(encodedDocument);
-        SimpleRecord decodedRecord = codec.decode(reader, DecoderContext.builder().build());
+        T decodedRecord = codec.decode(reader, DecoderContext.builder().build());
         assertEquals(record, decodedRecord);
     }
+
 }

@@ -24,9 +24,18 @@ import org.bson.codecs.Decoder;
 import org.bson.codecs.DecoderContext;
 import org.bson.codecs.Encoder;
 import org.bson.codecs.EncoderContext;
+import org.bson.codecs.configuration.CodecConfigurationException;
 import org.bson.codecs.configuration.CodecProvider;
 import org.bson.codecs.configuration.CodecRegistry;
+import org.bson.codecs.pojo.annotations.BsonCreator;
+import org.bson.codecs.pojo.annotations.BsonDiscriminator;
+import org.bson.codecs.pojo.annotations.BsonExtraElements;
+import org.bson.codecs.pojo.annotations.BsonId;
+import org.bson.codecs.pojo.annotations.BsonIgnore;
+import org.bson.codecs.pojo.annotations.BsonProperty;
+import org.bson.codecs.pojo.annotations.BsonRepresentation;
 
+import java.lang.annotation.Annotation;
 import java.lang.classfile.ClassBuilder;
 import java.lang.classfile.ClassFile;
 import java.lang.classfile.Label;
@@ -35,9 +44,17 @@ import java.lang.constant.ClassDesc;
 import java.lang.constant.ConstantDescs;
 import java.lang.constant.MethodTypeDesc;
 import java.lang.reflect.AccessFlag;
+import java.lang.reflect.Constructor;
 import java.lang.reflect.InvocationTargetException;
+import java.lang.reflect.ParameterizedType;
+import java.lang.reflect.RecordComponent;
+import java.lang.reflect.Type;
+import java.lang.reflect.TypeVariable;
+import java.util.ArrayList;
 import java.util.Arrays;
+import java.util.List;
 
+import static java.lang.String.format;
 import static java.lang.classfile.ClassFile.ACC_FINAL;
 import static java.lang.classfile.ClassFile.ACC_PRIVATE;
 import static java.lang.classfile.ClassFile.ACC_PUBLIC;
@@ -56,7 +73,7 @@ public class GeneratedRecordCodecProvider implements CodecProvider {
             return null;
         }
         @SuppressWarnings({"unchecked", "rawtypes"})
-        Codec<T> result = new RecordCodecGenerator(clazz, registry).generateCodec();
+        Codec<T> result = new RecordCodecGenerator(clazz, List.of(), registry).generateCodec();
         return result;
     }
 
@@ -76,12 +93,16 @@ public class GeneratedRecordCodecProvider implements CodecProvider {
         private final ClassDesc recordClassDesc;
         private final ClassDesc recordCodecClassDesc;
         private final CodecRegistry registry;
+        private final List<ComponentModel> componentModels;
+        private final ComponentModel componentModelForId;
 
-        public RecordCodecGenerator(Class<T> recordClass, CodecRegistry registry) {
+        public RecordCodecGenerator(Class<T> recordClass, final List<Type> types, CodecRegistry registry) {
             this.recordClass = recordClass;
             this.recordClassDesc = ClassDesc.of(recordClass.getName());
             this.recordCodecClassDesc = ClassDesc.of("org.bson.codecs.record", recordClass.getSimpleName() + "Codec");
             this.registry = registry;
+            this.componentModels = getComponentModels(recordClass, types);
+            this.componentModelForId = getComponentModelForId(recordClass, componentModels);
         }
 
         public Codec<T> generateCodec() {
@@ -96,6 +117,16 @@ public class GeneratedRecordCodecProvider implements CodecProvider {
             } catch (InstantiationException | IllegalAccessException | InvocationTargetException |
                      NoSuchMethodException e) {
                 throw new RuntimeException(e);
+            }
+        }
+
+        private static <T> ComponentModel getComponentModelForId(final Class<T> clazz, final List<ComponentModel> componentModels) {
+            List<ComponentModel> componentModelsForId = componentModels.stream()
+                    .filter(componentModel -> componentModel.fieldName.equals("_id")).toList();
+            if (componentModelsForId.size() > 1) {
+                throw new CodecConfigurationException(format("Record %s has more than one _id component", clazz.getName()));
+            } else {
+                return componentModelsForId.stream().findFirst().orElse(null);
             }
         }
 
@@ -115,9 +146,8 @@ public class GeneratedRecordCodecProvider implements CodecProvider {
         }
 
         private void generateFields(ClassBuilder clb) {
-            var recordComponents = recordClass.getRecordComponents();
-            for (var recordComponent : recordComponents) {
-                clb.withField(recordComponent.getName() + "Codec",
+            for (var componentModel : componentModels) {
+                clb.withField(componentModel.name + "Codec",
                         ClassDesc.of("org.bson.codecs", "Codec"), ACC_PRIVATE | ACC_FINAL);
             }
         }
@@ -141,14 +171,14 @@ public class GeneratedRecordCodecProvider implements CodecProvider {
                                 .invokespecial(ConstantDescs.CD_Object,
                                         ConstantDescs.INIT_NAME, ConstantDescs.MTD_void);
 
-                        for (var recordComponent : recordClass.getRecordComponents()) {
+                        for (var componentModel : componentModels) {
                             cob
                                     .aload(0)
                                     .aload(1)
-                                    .ldc(ClassDesc.of(recordComponent.getType().getName()))
+                                    .ldc(ClassDesc.of(componentModel.rawType.getName()))
                                     .invokeinterface(codecRegistryClassDesc, "get", MethodTypeDesc.of(codecClassDesc, CD_Class))
                                     .putfield(recordCodecClassDesc,
-                                            recordComponent.getName() + "Codec",
+                                            componentModel.name + "Codec",
                                             ClassDesc.of(Codec.class.getName()));
 
                         }
@@ -169,29 +199,28 @@ public class GeneratedRecordCodecProvider implements CodecProvider {
                                 .aload(writerSlot)
                                 .invokeinterface(bsonWriterClassDesc, "writeStartDocument", MethodTypeDesc.of(CD_void));
 
-                        for (var recordComponent : recordClass.getRecordComponents()) {
+                        for (var componentModel : componentModels) {
                             var l0 = cob.newLabel();
-                            var name = recordComponent.getName();
-                            var recordComponentMtd = MethodTypeDesc.of(ClassDesc.of(recordComponent.getType().getName()));
+                            var recordComponentMtd = MethodTypeDesc.of(ClassDesc.of(componentModel.rawType.getName()));
 
                             cob
                                     .aload(recordClassSlot)
-                                    .invokevirtual(recordClassDesc, name, recordComponentMtd);
+                                    .invokevirtual(recordClassDesc, componentModel.name, recordComponentMtd);
 
                             cob
                                     .ifnull(l0)
                                     .aload(writerSlot)
-                                    .ldc(clb.constantPool().stringEntry(name))
+                                    .ldc(clb.constantPool().stringEntry(componentModel.fieldName))
                                     .invokeinterface(bsonWriterClassDesc, "writeName",
                                             MethodTypeDesc.of(CD_void, CD_String));
 
                             cob
                                     .aload(encoderContextSlot)
                                     .aload(thisSlot)
-                                    .getfield(recordCodecClassDesc, name + "Codec", codecClassDesc)
+                                    .getfield(recordCodecClassDesc, componentModel.name + "Codec", codecClassDesc)
                                     .aload(writerSlot)
                                     .aload(recordClassSlot)
-                                    .invokevirtual(recordClassDesc, name, recordComponentMtd)
+                                    .invokevirtual(recordClassDesc, componentModel.name, recordComponentMtd)
                                     .invokevirtual(encoderContextClassDesc, "encodeWithChildContext",
                                             MethodTypeDesc.of(CD_void, encoderClassDesc, bsonWriterClassDesc, CD_Object))
                                     .labelBinding(l0);
@@ -231,10 +260,10 @@ public class GeneratedRecordCodecProvider implements CodecProvider {
                     ACC_PUBLIC,
                     cob -> {
                         // create a local variable for each component
-                        for (int i = 0; i < recordClass.getRecordComponents().length; i++) {
+                        for (var componentModel : componentModels) {
                             cob
                                     .aconst_null()
-                                    .astore(firstComponentValueSlot + i);
+                                    .astore(firstComponentValueSlot + componentModel.index);
                         }
 
                         var startLoopLabel = cob.newLabel();
@@ -261,28 +290,27 @@ public class GeneratedRecordCodecProvider implements CodecProvider {
 
                         Label curBranchLabel;
                         Label nextBranchLabel = null;
-                        for (int i = 0; i < recordClass.getRecordComponents().length; i++) {
+                        for (var componentModel : componentModels) {
                             curBranchLabel = nextBranchLabel;
                             nextBranchLabel = cob.newLabel();
-                            var recordComponent = recordClass.getRecordComponents()[i];
                             if (curBranchLabel != null) {
                                 cob.labelBinding(curBranchLabel);
                             }
                             cob
                                     .aload(nameSlot)
-                                    .ldc(clb.constantPool().stringEntry(recordComponent.getName()))
+                                    .ldc(clb.constantPool().stringEntry(componentModel.fieldName))
                                     .invokevirtual(CD_String, "equals", MethodTypeDesc.of(CD_boolean, CD_Object));
 
                             cob
                                     .ifeq(nextBranchLabel)
                                     .aload(decoderContextSlot)
                                     .aload(thisSlot)
-                                    .getfield(recordCodecClassDesc, recordComponent.getName() + "Codec", codecClassDesc)
+                                    .getfield(recordCodecClassDesc, componentModel.name + "Codec", codecClassDesc)
                                     .aload(readerSlot)
                                     .invokevirtual(decoderContextClassDesc, "decodeWithChildContext",
                                             MethodTypeDesc.of(CD_Object, decoderClassDesc, bsonReaderClassDesc))
-                                    .checkcast(ClassDesc.of(recordComponent.getType().getName()))
-                                    .astore(firstComponentValueSlot + i)
+                                    .checkcast(ClassDesc.of(componentModel.rawType.getName()))
+                                    .astore(firstComponentValueSlot + componentModel.index)
                                     .goto_(endElseLabel);
                         }
 
@@ -298,15 +326,15 @@ public class GeneratedRecordCodecProvider implements CodecProvider {
                                 .aload(readerSlot)
                                 .invokeinterface(bsonReaderClassDesc, "readEndDocument", MethodTypeDesc.of(CD_void));
 
-                        var paramDescriptors = Arrays.stream(recordClass.getRecordComponents())
-                                .map(recordComponent -> ClassDesc.of(recordComponent.getType().getName()))
+                        var paramDescriptors = componentModels.stream()
+                                .map(componentModel -> ClassDesc.of(componentModel.rawType.getName()))
                                 .toList();
                         var recordConstructorMtd = MethodTypeDesc.of(CD_void, paramDescriptors);
                         cob
                                 .new_(recordClassDesc)
                                 .dup();
-                        for (int i = 0; i < recordClass.getRecordComponents().length; i++) {
-                            cob.aload(firstComponentValueSlot + i);
+                        for (var componentModel : componentModels) {
+                            cob.aload(firstComponentValueSlot + componentModel.index);
                         }
 
                         cob
@@ -327,11 +355,211 @@ public class GeneratedRecordCodecProvider implements CodecProvider {
                             .return_(TypeKind.REFERENCE)
             );
         }
+
+        private static <T> List<ComponentModel> getComponentModels(final Class<T> clazz,
+                                                                   final List<Type> typeParameters) {
+            var recordComponents = clazz.getRecordComponents();
+            var componentModels = new ArrayList<ComponentModel>(recordComponents.length);
+            for (int i = 0; i < recordComponents.length; i++) {
+                componentModels.add(new ComponentModel(typeParameters, recordComponents[i], i));
+            }
+            return componentModels;
+        }
+
+        private static final class ComponentModel {
+            private final String name;
+            private final int index;
+            private final String fieldName;
+            private final boolean isNullable;
+            private final Class<?> rawType;
+            private final List<Type> typeArguments;
+            private final BsonType bsonRepresentationType;
+
+            private ComponentModel(final List<Type> typeParameters, final RecordComponent component, final int index) {
+                validateAnnotations(component, index);
+                this.name = component.getName();
+                this.index = index;
+                this.fieldName = computeFieldName(component);
+                this.isNullable = !component.getType().isPrimitive();
+                this.rawType = toWrapper(resolveComponentType(typeParameters, component));
+                this.typeArguments = (component.getGenericType() instanceof ParameterizedType parameterizedType)
+                        ? resolveActualTypeArguments(typeParameters, component.getDeclaringRecord(), parameterizedType)
+                        : List.of();
+                this.bsonRepresentationType = isAnnotationPresentOnField(component, BsonRepresentation.class)
+                        ? getAnnotationOnField(component, BsonRepresentation.class).value()
+                        : null;
+            }
+
+            private static Class<?> toWrapper(final Class<?> clazz) {
+                if (clazz == Integer.TYPE) {
+                    return Integer.class;
+                } else if (clazz == Long.TYPE) {
+                    return Long.class;
+                } else if (clazz == Boolean.TYPE) {
+                    return Boolean.class;
+                } else if (clazz == Byte.TYPE) {
+                    return Byte.class;
+                } else if (clazz == Character.TYPE) {
+                    return Character.class;
+                } else if (clazz == Float.TYPE) {
+                    return Float.class;
+                } else if (clazz == Double.TYPE) {
+                    return Double.class;
+                } else if (clazz == Short.TYPE) {
+                    return Short.class;
+                } else {
+                    return clazz;
+                }
+            }
+
+            private static Class<?> resolveComponentType(final List<Type> typeParameters, final RecordComponent component) {
+                Type resolvedType = resolveType(component.getGenericType(), typeParameters, component.getDeclaringRecord());
+                return resolvedType instanceof Class<?> clazz ? clazz : component.getType();
+            }
+
+            private static List<Type> resolveActualTypeArguments(final List<Type> typeParameters, final Class<?> recordClass,
+                                                                 final ParameterizedType parameterizedType) {
+                return Arrays.stream(parameterizedType.getActualTypeArguments())
+                        .map(type -> resolveType(type, typeParameters, recordClass))
+                        .toList();
+            }
+
+            private static Type resolveType(final Type type, final List<Type> typeParameters, final Class<?> recordClass) {
+                return type instanceof TypeVariable<?> typeVariable
+                        ? typeParameters.get(getIndexOfTypeParameter(typeVariable.getName(), recordClass))
+                        : type;
+            }
+
+            // Get
+            private static int getIndexOfTypeParameter(final String typeParameterName, final Class<?> recordClass) {
+                var typeParameters = recordClass.getTypeParameters();
+                for (int i = 0; i < typeParameters.length; i++) {
+                    if (typeParameters[i].getName().equals(typeParameterName)) {
+                        return i;
+                    }
+                }
+                throw new CodecConfigurationException(format("Could not find type parameter on record %s with name %s",
+                        recordClass.getName(), typeParameterName));
+            }
+
+            private static String computeFieldName(final RecordComponent component) {
+                if (isAnnotationPresentOnField(component, BsonId.class)) {
+                    return "_id";
+                } else if (isAnnotationPresentOnField(component, BsonProperty.class)) {
+                    return getAnnotationOnField(component, BsonProperty.class).value();
+                }
+                return component.getName();
+            }
+
+            private static <T extends Annotation> boolean isAnnotationPresentOnField(final RecordComponent component,
+                                                                                     final Class<T> annotation) {
+                try {
+                    return component.getDeclaringRecord().getDeclaredField(component.getName()).isAnnotationPresent(annotation);
+                } catch (NoSuchFieldException e) {
+                    throw new AssertionError(format("Unexpectedly missing the declared field for record component %s", component), e);
+                }
+            }
+
+            private static <T extends Annotation> boolean isAnnotationPresentOnCanonicalConstructorParameter(final RecordComponent component,
+                                                                                                             final int index, final Class<T> annotation) {
+                return getCanonicalConstructor(component.getDeclaringRecord()).getParameters()[index].isAnnotationPresent(annotation);
+            }
+
+            private static <T> Constructor<?> getCanonicalConstructor(final Class<T> clazz) {
+                try {
+                    return clazz.getDeclaredConstructor(Arrays.stream(clazz.getRecordComponents())
+                            .map(RecordComponent::getType)
+                            .toArray(Class<?>[]::new));
+                } catch (NoSuchMethodException e) {
+                    throw new AssertionError(format("Could not find canonical constructor for record %s", clazz.getName()));
+                }
+            }
+
+            private static <T extends Annotation> T getAnnotationOnField(final RecordComponent component, final Class<T> annotation) {
+                try {
+                    return component.getDeclaringRecord().getDeclaredField(component.getName()).getAnnotation(annotation);
+                } catch (NoSuchFieldException e) {
+                    throw new AssertionError(format("Unexpectedly missing the declared field for recordComponent %s", component), e);
+                }
+            }
+
+            private static void validateAnnotations(final RecordComponent component, final int index) {
+                validateAnnotationNotPresentOnType(component.getDeclaringRecord(), BsonDiscriminator.class);
+                validateAnnotationNotPresentOnConstructor(component.getDeclaringRecord(), BsonCreator.class);
+                validateAnnotationNotPresentOnMethod(component.getDeclaringRecord(), BsonCreator.class);
+                validateAnnotationNotPresentOnFieldOrAccessor(component, BsonIgnore.class);
+                validateAnnotationNotPresentOnFieldOrAccessor(component, BsonExtraElements.class);
+                validateAnnotationOnlyOnField(component, index, BsonId.class);
+                validateAnnotationOnlyOnField(component, index, BsonProperty.class);
+                validateAnnotationOnlyOnField(component, index, BsonRepresentation.class);
+            }
+
+            private static <T extends Annotation> void validateAnnotationNotPresentOnType(final Class<?> clazz,
+                                                                                          @SuppressWarnings("SameParameterValue") final Class<T> annotation) {
+                if (clazz.isAnnotationPresent(annotation)) {
+                    throw new CodecConfigurationException(format("Annotation '%s' not supported on records, but found on '%s'",
+                            annotation, clazz.getName()));
+                }
+            }
+
+            private static <T extends Annotation> void validateAnnotationNotPresentOnConstructor(final Class<?> clazz,
+                                                                                                 @SuppressWarnings("SameParameterValue") final Class<T> annotation) {
+                for (var constructor : clazz.getConstructors()) {
+                    if (constructor.isAnnotationPresent(annotation)) {
+                        throw new CodecConfigurationException(
+                                format("Annotation '%s' not supported on record constructors, but found on constructor of '%s'",
+                                        annotation, clazz.getName()));
+                    }
+                }
+            }
+
+            private static <T extends Annotation> void validateAnnotationNotPresentOnMethod(final Class<?> clazz,
+                                                                                            @SuppressWarnings("SameParameterValue") final Class<T> annotation) {
+                for (var method : clazz.getMethods()) {
+                    if (method.isAnnotationPresent(annotation)) {
+                        throw new CodecConfigurationException(
+                                format("Annotation '%s' not supported on methods, but found on method '%s' of '%s'",
+                                        annotation, method.getName(), clazz.getName()));
+                    }
+                }
+            }
+
+            private static <T extends Annotation> void validateAnnotationNotPresentOnFieldOrAccessor(final RecordComponent component,
+                                                                                                     final Class<T> annotation) {
+                if (isAnnotationPresentOnField(component, annotation)) {
+                    throw new CodecConfigurationException(
+                            format("Annotation '%s' is not supported on records, but found on component '%s' of record '%s'",
+                                    annotation.getName(), component, component.getDeclaringRecord()));
+                }
+                if (component.getAccessor().isAnnotationPresent(annotation)) {
+                    throw new CodecConfigurationException(
+                            format("Annotation '%s' is not supported on records, but found on accessor for component '%s' of record '%s'",
+                                    annotation.getName(), component, component.getDeclaringRecord()));
+                }
+            }
+
+            private static <T extends Annotation> void validateAnnotationOnlyOnField(final RecordComponent component, final int index,
+                                                                                     final Class<T> annotation) {
+                if (!isAnnotationPresentOnField(component, annotation)) {
+                    if (component.getAccessor().isAnnotationPresent(annotation)) {
+                        throw new CodecConfigurationException(format("Annotation %s present on accessor but not component '%s' of record '%s'",
+                                annotation.getName(), component, component.getDeclaringRecord()));
+                    }
+                    if (isAnnotationPresentOnCanonicalConstructorParameter(component, index, annotation)) {
+                        throw new CodecConfigurationException(
+                                format("Annotation %s present on canonical constructor parameter but not component '%s' of record '%s'",
+                                        annotation.getName(), component, component.getDeclaringRecord()));
+                    }
+                }
+            }
+        }
+
+        private static class ByteArrayClassLoader extends ClassLoader {
+            public Class<?> defineClass(String name, byte[] b) {
+                return defineClass(name, b, 0, b.length);
+            }
+        }
+
     }
 
-    private static class ByteArrayClassLoader extends ClassLoader {
-        public Class<?> defineClass(String name, byte[] b) {
-            return defineClass(name, b, 0, b.length);
-        }
-    }
 }
