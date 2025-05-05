@@ -20,12 +20,16 @@ import org.bson.BsonArray;
 import org.bson.BsonDocument;
 import org.bson.BsonDocumentReader;
 import org.bson.BsonDocumentWriter;
+import org.bson.BsonDouble;
 import org.bson.BsonInt32;
+import org.bson.BsonObjectId;
 import org.bson.BsonString;
 import org.bson.codecs.Codec;
 import org.bson.codecs.DecoderContext;
 import org.bson.codecs.EncoderContext;
-import org.bson.codecs.configuration.CodecProvider;
+import org.bson.codecs.configuration.CodecRegistries;
+import org.bson.codecs.configuration.CodecRegistry;
+import org.bson.types.ObjectId;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 
@@ -36,11 +40,13 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 
 public class GeneratedRecordCodecProviderTest {
 
-    CodecProvider provider;
+    CodecRegistry registry;
 
     @BeforeEach
     void beforeEach() {
-       provider = new GeneratedRecordCodecProvider();
+        registry = CodecRegistries.fromProviders(
+                DEFAULT_CODEC_REGISTRY,
+                new GeneratedRecordCodecProvider());
     }
 
     @Test
@@ -53,15 +59,29 @@ public class GeneratedRecordCodecProviderTest {
 
     @Test
     void testAnnotatedRecord() {
-         assertRoundTrip(AnnotatedRecord.class,
-                 new AnnotatedRecord("Liz", 56, List.of("programming", "pottery"), "42"),
-         new BsonDocument("name", new BsonString("Liz")).append("a", new BsonInt32(56))
-                 .append("hobbies", new BsonArray(List.of(new BsonString("programming"), new BsonString("pottery"))))
-                 .append("_id", new BsonString("42")));
+        assertRoundTrip(AnnotatedRecord.class,
+                new AnnotatedRecord("Liz", 56, List.of("programming", "pottery"), "42"),
+                new BsonDocument("name", new BsonString("Liz")).append("a", new BsonInt32(56))
+                        .append("hobbies", new BsonArray(List.of(new BsonString("programming"), new BsonString("pottery"))))
+                        .append("_id", new BsonString("42")));
+    }
+
+    @Test
+    void testParameterizedRecord() {
+        ObjectId id = new ObjectId();
+        assertRoundTrip(TestRecordWithParameterizedRecord.class,
+                new TestRecordWithParameterizedRecord(id,
+                        new TestRecordParameterized<>(42.0, List.of(new TestRecordEmbedded("n1")))),
+                new BsonDocument("_id", new BsonObjectId(id))
+                        .append("parameterizedRecord",
+                                new BsonDocument("number", new BsonDouble(42.0))
+                                        .append("parameterizedList",
+                                                new BsonArray(List.of(
+                                                        new BsonDocument("name", new BsonString("n1")))))));
     }
 
     private <T> void assertRoundTrip(Class<T> recordClass, T record, BsonDocument expectedDocument) {
-        Codec<T> codec = provider.get(recordClass, DEFAULT_CODEC_REGISTRY);
+        Codec<T> codec = registry.get(recordClass);
 
         assertEquals(recordClass, codec.getEncoderClass());
 

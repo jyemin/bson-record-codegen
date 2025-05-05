@@ -52,6 +52,7 @@ import java.lang.reflect.Type;
 import java.lang.reflect.TypeVariable;
 import java.util.ArrayList;
 import java.util.Arrays;
+import java.util.Collections;
 import java.util.List;
 
 import static java.lang.String.format;
@@ -59,6 +60,7 @@ import static java.lang.classfile.ClassFile.ACC_FINAL;
 import static java.lang.classfile.ClassFile.ACC_PRIVATE;
 import static java.lang.classfile.ClassFile.ACC_PUBLIC;
 import static java.lang.constant.ConstantDescs.CD_Class;
+import static java.lang.constant.ConstantDescs.CD_List;
 import static java.lang.constant.ConstantDescs.CD_Object;
 import static java.lang.constant.ConstantDescs.CD_String;
 import static java.lang.constant.ConstantDescs.CD_boolean;
@@ -69,11 +71,16 @@ import static org.bson.assertions.Assertions.assertNotNull;
 public class GeneratedRecordCodecProvider implements CodecProvider {
     @Override
     public <T> Codec<T> get(Class<T> clazz, CodecRegistry registry) {
+        return get(clazz, List.of(), registry);
+    }
+
+    @Override
+    public <T> Codec<T> get(Class<T> clazz, List<Type> typeArguments, CodecRegistry registry) {
         if (!assertNotNull(clazz).isRecord()) {
             return null;
         }
         @SuppressWarnings({"unchecked", "rawtypes"})
-        Codec<T> result = new RecordCodecGenerator(clazz, List.of(), registry).generateCodec();
+        Codec<T> result = new RecordCodecGenerator(clazz, typeArguments, registry).generateCodec();
         return result;
     }
 
@@ -162,21 +169,35 @@ public class GeneratedRecordCodecProvider implements CodecProvider {
         private void generateConstructor(ClassBuilder clb) {
             var codecClassDesc = ClassDesc.of(Codec.class.getName());
             var codecRegistryClassDesc = ClassDesc.of(CodecRegistry.class.getName());
+            int codeRegistrySlot = 1;
             clb.withMethodBody(ConstantDescs.INIT_NAME,
                     MethodTypeDesc.of(CD_void, codecRegistryClassDesc),
                     ACC_PUBLIC,
                     cob -> {
                         cob
-                                .aload(0)
+                                .aload(thisSlot)
                                 .invokespecial(ConstantDescs.CD_Object,
                                         ConstantDescs.INIT_NAME, ConstantDescs.MTD_void);
 
                         for (var componentModel : componentModels) {
                             cob
-                                    .aload(0)
-                                    .aload(1)
-                                    .ldc(ClassDesc.of(componentModel.rawType.getName()))
-                                    .invokeinterface(codecRegistryClassDesc, "get", MethodTypeDesc.of(codecClassDesc, CD_Class))
+                                    .aload(thisSlot)
+                                    .aload(codeRegistrySlot)
+                                    .ldc(ClassDesc.of(componentModel.rawType.getName()));
+                            if (componentModel.typeArguments.isEmpty()) {
+                                cob
+                                        .invokeinterface(codecRegistryClassDesc, "get", MethodTypeDesc.of(codecClassDesc, CD_Class));
+                            } else {
+                                for (var typeArgument : componentModel.typeArguments) {
+                                    // TODO: these won't all be Class instances
+                                    Class<?> typeArgumentClass = (Class<?>) typeArgument;
+                                    cob.ldc(ClassDesc.of(typeArgumentClass.getName()));
+                                }
+                                cob.invokestatic(CD_List, "of", MethodTypeDesc.of(CD_List,
+                                        Collections.nCopies(componentModel.typeArguments.size(), CD_Object)), true);
+                                cob.invokeinterface(codecRegistryClassDesc, "get", MethodTypeDesc.of(codecClassDesc, CD_Class, CD_List));
+                            }
+                            cob
                                     .putfield(recordCodecClassDesc,
                                             componentModel.name + "Codec",
                                             ClassDesc.of(Codec.class.getName()));
@@ -201,7 +222,7 @@ public class GeneratedRecordCodecProvider implements CodecProvider {
 
                         for (var componentModel : componentModels) {
                             var l0 = cob.newLabel();
-                            var recordComponentMtd = MethodTypeDesc.of(ClassDesc.of(componentModel.rawType.getName()));
+                            var recordComponentMtd = MethodTypeDesc.of(ClassDesc.of(componentModel.type.getName()));
 
                             cob
                                     .aload(recordClassSlot)
@@ -327,7 +348,7 @@ public class GeneratedRecordCodecProvider implements CodecProvider {
                                 .invokeinterface(bsonReaderClassDesc, "readEndDocument", MethodTypeDesc.of(CD_void));
 
                         var paramDescriptors = componentModels.stream()
-                                .map(componentModel -> ClassDesc.of(componentModel.rawType.getName()))
+                                .map(componentModel -> ClassDesc.of(componentModel.type.getName()))
                                 .toList();
                         var recordConstructorMtd = MethodTypeDesc.of(CD_void, paramDescriptors);
                         cob
@@ -371,6 +392,7 @@ public class GeneratedRecordCodecProvider implements CodecProvider {
             private final int index;
             private final String fieldName;
             private final boolean isNullable;
+            private final Class<?> type;
             private final Class<?> rawType;
             private final List<Type> typeArguments;
             private final BsonType bsonRepresentationType;
@@ -381,6 +403,7 @@ public class GeneratedRecordCodecProvider implements CodecProvider {
                 this.index = index;
                 this.fieldName = computeFieldName(component);
                 this.isNullable = !component.getType().isPrimitive();
+                this.type = component.getType();
                 this.rawType = toWrapper(resolveComponentType(typeParameters, component));
                 this.typeArguments = (component.getGenericType() instanceof ParameterizedType parameterizedType)
                         ? resolveActualTypeArguments(typeParameters, component.getDeclaringRecord(), parameterizedType)
