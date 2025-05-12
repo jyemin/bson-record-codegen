@@ -60,10 +60,12 @@ import static java.lang.classfile.ClassFile.ACC_FINAL;
 import static java.lang.classfile.ClassFile.ACC_PRIVATE;
 import static java.lang.classfile.ClassFile.ACC_PUBLIC;
 import static java.lang.constant.ConstantDescs.CD_Class;
+import static java.lang.constant.ConstantDescs.CD_Integer;
 import static java.lang.constant.ConstantDescs.CD_List;
 import static java.lang.constant.ConstantDescs.CD_Object;
 import static java.lang.constant.ConstantDescs.CD_String;
 import static java.lang.constant.ConstantDescs.CD_boolean;
+import static java.lang.constant.ConstantDescs.CD_int;
 import static java.lang.constant.ConstantDescs.CD_void;
 import static java.lang.constant.ConstantDescs.INIT_NAME;
 import static org.bson.assertions.Assertions.assertNotNull;
@@ -101,7 +103,6 @@ public class GeneratedRecordCodecProvider implements CodecProvider {
         private final ClassDesc recordCodecClassDesc;
         private final CodecRegistry registry;
         private final List<ComponentModel> componentModels;
-        private final ComponentModel componentModelForId;
 
         public RecordCodecGenerator(Class<T> recordClass, final List<Type> types, CodecRegistry registry) {
             this.recordClass = recordClass;
@@ -109,11 +110,17 @@ public class GeneratedRecordCodecProvider implements CodecProvider {
             this.recordCodecClassDesc = ClassDesc.of("org.bson.codecs.record", recordClass.getSimpleName() + "Codec");
             this.registry = registry;
             this.componentModels = getComponentModels(recordClass, types);
-            this.componentModelForId = getComponentModelForId(recordClass, componentModels);
         }
 
         public Codec<T> generateCodec() {
             var bytes = generateClass();
+
+            // for debugging
+//            try {
+//                Files.write(Path.of("/tmp", recordClass.getSimpleName() + "Codec.class"), bytes);
+//            } catch (IOException e) {
+//                throw new RuntimeException(e);
+//            }
 
             var loader = new ByteArrayClassLoader();
             var clazz = loader.defineClass(null, bytes);
@@ -124,16 +131,6 @@ public class GeneratedRecordCodecProvider implements CodecProvider {
             } catch (InstantiationException | IllegalAccessException | InvocationTargetException |
                      NoSuchMethodException e) {
                 throw new RuntimeException(e);
-            }
-        }
-
-        private static <T> ComponentModel getComponentModelForId(final Class<T> clazz, final List<ComponentModel> componentModels) {
-            List<ComponentModel> componentModelsForId = componentModels.stream()
-                    .filter(componentModel -> componentModel.fieldName.equals("_id")).toList();
-            if (componentModelsForId.size() > 1) {
-                throw new CodecConfigurationException(format("Record %s has more than one _id component", clazz.getName()));
-            } else {
-                return componentModelsForId.stream().findFirst().orElse(null);
             }
         }
 
@@ -170,14 +167,14 @@ public class GeneratedRecordCodecProvider implements CodecProvider {
             var codecClassDesc = ClassDesc.of(Codec.class.getName());
             var codecRegistryClassDesc = ClassDesc.of(CodecRegistry.class.getName());
             int codeRegistrySlot = 1;
-            clb.withMethodBody(ConstantDescs.INIT_NAME,
+            clb.withMethodBody(INIT_NAME,
                     MethodTypeDesc.of(CD_void, codecRegistryClassDesc),
                     ACC_PUBLIC,
                     cob -> {
                         cob
                                 .aload(thisSlot)
                                 .invokespecial(ConstantDescs.CD_Object,
-                                        ConstantDescs.INIT_NAME, ConstantDescs.MTD_void);
+                                        INIT_NAME, ConstantDescs.MTD_void);
 
                         for (var componentModel : componentModels) {
                             cob
@@ -212,6 +209,7 @@ public class GeneratedRecordCodecProvider implements CodecProvider {
             int writerSlot = 1;
             int recordClassSlot = 2;
             int encoderContextSlot = 3;
+            int componentValueSlot = 4;
             clb.withMethodBody("encode",
                     methodTypeDesc,
                     ACC_PUBLIC,
@@ -222,29 +220,58 @@ public class GeneratedRecordCodecProvider implements CodecProvider {
 
                         for (var componentModel : componentModels) {
                             var l0 = cob.newLabel();
-                            var recordComponentMtd = MethodTypeDesc.of(ClassDesc.of(componentModel.type.getName()));
+                            var recordComponentMtd = MethodTypeDesc.of(componentModel.classDesc);
 
                             cob
                                     .aload(recordClassSlot)
                                     .invokevirtual(recordClassDesc, componentModel.name, recordComponentMtd);
 
+                            if (componentModel.isNullable) {
+                                cob.astore(componentValueSlot);
+                            } else {
+                                // TODO: handle all primitive types
+                                cob.istore(componentValueSlot);
+                            }
+                            // stack: []
+                            if (componentModel.isNullable) {
+                                cob
+                                        .aload(componentValueSlot)
+                                        .ifnull(l0);
+                            }
                             cob
-                                    .ifnull(l0)
                                     .aload(writerSlot)
                                     .ldc(clb.constantPool().stringEntry(componentModel.fieldName))
+                                    // stack: [writer, field name]
                                     .invokeinterface(bsonWriterClassDesc, "writeName",
                                             MethodTypeDesc.of(CD_void, CD_String));
-
+                            // stack []
                             cob
                                     .aload(encoderContextSlot)
                                     .aload(thisSlot)
+                                    // stack: [encoder context, this]
                                     .getfield(recordCodecClassDesc, componentModel.name + "Codec", codecClassDesc)
-                                    .aload(writerSlot)
-                                    .aload(recordClassSlot)
-                                    .invokevirtual(recordClassDesc, componentModel.name, recordComponentMtd)
+                                    // stack: [encoder context, code]
+                                    .aload(writerSlot);
+
+                            // stack: [encoder context, encoder, writer]
+                            if (!componentModel.isNullable) {
+                                // TODO: handle other primitive types
+                                cob
+                                        .iload(componentValueSlot)
+                                        .invokestatic(componentModel.wrapperClassDesc, "valueOf",
+                                                MethodTypeDesc.of(ConstantDescs.CD_Integer, List.of(componentModel.classDesc)));
+                            } else {
+                                cob.aload(componentValueSlot);
+                            }
+                            // stack: [encoder context, encoder, writer, component value reference]
+                            cob
                                     .invokevirtual(encoderContextClassDesc, "encodeWithChildContext",
-                                            MethodTypeDesc.of(CD_void, encoderClassDesc, bsonWriterClassDesc, CD_Object))
-                                    .labelBinding(l0);
+                                            MethodTypeDesc.of(CD_void, encoderClassDesc, bsonWriterClassDesc, CD_Object));
+                            // stack: []
+                            if (componentModel.isNullable) {
+                                cob
+                                        .labelBinding(l0);
+                            }
                         }
 
                         cob
@@ -270,11 +297,10 @@ public class GeneratedRecordCodecProvider implements CodecProvider {
 
         private void generateDecodeMethod(ClassBuilder clb) {
             var methodTypeDesc = MethodTypeDesc.of(recordClassDesc, bsonReaderClassDesc, decoderContextClassDesc);
-            var numParams = 3;
             var readerSlot = 1;
             var decoderContextSlot = 2;
             var firstComponentValueSlot = 3;
-            var lastComponentValueSlot = firstComponentValueSlot + numParams - 1;
+            var lastComponentValueSlot = firstComponentValueSlot + componentModels.size() - 1;
             var nameSlot = lastComponentValueSlot + 1;
             clb.withMethodBody("decode",
                     methodTypeDesc,
@@ -282,11 +308,17 @@ public class GeneratedRecordCodecProvider implements CodecProvider {
                     cob -> {
                         // create a local variable for each component
                         for (var componentModel : componentModels) {
-                            cob
-                                    .aconst_null()
-                                    .astore(firstComponentValueSlot + componentModel.index);
+                            if (componentModel.isNullable) {
+                                cob
+                                        .aconst_null()
+                                        .astore(firstComponentValueSlot + componentModel.index);
+                            } else {
+                                // TODO: support other primitives
+                                cob
+                                        .iconst_0()
+                                        .istore(firstComponentValueSlot + componentModel.index);
+                            }
                         }
-
                         var startLoopLabel = cob.newLabel();
                         var endLoopLabel = cob.newLabel();
                         var endElseLabel = cob.newLabel();
@@ -330,9 +362,15 @@ public class GeneratedRecordCodecProvider implements CodecProvider {
                                     .aload(readerSlot)
                                     .invokevirtual(decoderContextClassDesc, "decodeWithChildContext",
                                             MethodTypeDesc.of(CD_Object, decoderClassDesc, bsonReaderClassDesc))
-                                    .checkcast(ClassDesc.of(componentModel.rawType.getName()))
-                                    .astore(firstComponentValueSlot + componentModel.index)
-                                    .goto_(endElseLabel);
+                                    .checkcast(ClassDesc.of(componentModel.rawType.getName()));
+                            if (componentModel.isNullable) {
+                                cob.astore(firstComponentValueSlot + componentModel.index);
+                            } else {
+                                // TODO: support other primitive types
+                                cob.invokevirtual(CD_Integer, "intValue", MethodTypeDesc.of(CD_int));
+                                cob.istore(firstComponentValueSlot + componentModel.index);
+                            }
+                            cob.goto_(endElseLabel);
                         }
 
                         cob
@@ -348,14 +386,19 @@ public class GeneratedRecordCodecProvider implements CodecProvider {
                                 .invokeinterface(bsonReaderClassDesc, "readEndDocument", MethodTypeDesc.of(CD_void));
 
                         var paramDescriptors = componentModels.stream()
-                                .map(componentModel -> ClassDesc.of(componentModel.type.getName()))
+                                .map(componentModel -> componentModel.classDesc)
                                 .toList();
                         var recordConstructorMtd = MethodTypeDesc.of(CD_void, paramDescriptors);
                         cob
                                 .new_(recordClassDesc)
                                 .dup();
                         for (var componentModel : componentModels) {
-                            cob.aload(firstComponentValueSlot + componentModel.index);
+                            if (componentModel.isNullable) {
+                                cob.aload(firstComponentValueSlot + componentModel.index);
+                            } else {
+                                // TODO: support other primitive types
+                                cob.iload(firstComponentValueSlot + componentModel.index);
+                            }
                         }
 
                         cob
@@ -392,7 +435,8 @@ public class GeneratedRecordCodecProvider implements CodecProvider {
             private final int index;
             private final String fieldName;
             private final boolean isNullable;
-            private final Class<?> type;
+            private final ClassDesc classDesc;
+            private final ClassDesc wrapperClassDesc;
             private final Class<?> rawType;
             private final List<Type> typeArguments;
             private final BsonType bsonRepresentationType;
@@ -403,7 +447,11 @@ public class GeneratedRecordCodecProvider implements CodecProvider {
                 this.index = index;
                 this.fieldName = computeFieldName(component);
                 this.isNullable = !component.getType().isPrimitive();
-                this.type = component.getType();
+                // TODO: support all primitives
+                this.classDesc = component.getType().isPrimitive() ?
+                        ConstantDescs.CD_int : ClassDesc.of(component.getType().getName());
+                this.wrapperClassDesc = component.getType().isPrimitive() ?
+                        ConstantDescs.CD_Integer : classDesc;
                 this.rawType = toWrapper(resolveComponentType(typeParameters, component));
                 this.typeArguments = (component.getGenericType() instanceof ParameterizedType parameterizedType)
                         ? resolveActualTypeArguments(typeParameters, component.getDeclaringRecord(), parameterizedType)

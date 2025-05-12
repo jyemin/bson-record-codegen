@@ -8,6 +8,6 @@ import java.util.List;
 
 public record SimpleRecord(@BsonId ObjectId id,
                            String name,
-                           @BsonProperty("a") Integer age,
+                           @BsonProperty("a") int age,
                            List<String> hobbies) {
 }

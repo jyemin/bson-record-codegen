@@ -57,6 +57,15 @@ public class GeneratedRecordCodecProviderTest {
                 new BsonDocument("id", new BsonString("42")).append("val", new BsonInt32(1)));
     }
 
+
+    @Test
+    void testRecordWithPrimitives() {
+        assertRoundTrip(
+                TestRecordWithPrimitives.class,
+                new TestRecordWithPrimitives(42),
+                new BsonDocument("i", new BsonInt32(42)));
+    }
+
     @Test
     void testAnnotatedRecord() {
         assertRoundTrip(AnnotatedRecord.class,
@@ -91,7 +100,7 @@ public class GeneratedRecordCodecProviderTest {
 
         assertEquals(expectedDocument, encodedDocument);
 
-        BsonDocumentReader reader = new BsonDocumentReader(encodedDocument);
+        BsonDocumentReader reader = new BsonDocumentReader(expectedDocument);
         T decodedRecord = codec.decode(reader, DecoderContext.builder().build());
         assertEquals(record, decodedRecord);
     }
