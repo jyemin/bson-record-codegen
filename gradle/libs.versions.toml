@@ -2,7 +2,12 @@
 # https://docs.gradle.org/current/userguide/platforms.html#sub::toml-dependencies-format
 
 [versions]
-bson = "5.4.0"
+bson = "5.5.0"
+jmh = "1.37"
+
 
 [libraries]
 bson = { module = "org.mongodb:bson", version.ref = "bson" }
+bson-record-codec = { module = "org.mongodb:bson-record-codec", version.ref = "bson" }
+jmh-core = { module = "org.openjdk.jmh:jmh-core", version.ref = "jmh"}
+jmh-generator-annprocess = { module = "org.openjdk.jmh:jmh-generator-annprocess", version.ref = "jmh"}

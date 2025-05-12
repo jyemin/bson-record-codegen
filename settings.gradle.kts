@@ -13,3 +13,4 @@ plugins {
 
 rootProject.name = "mongo-java-driver-codegen"
 include("lib")
+include("benchmarks")
