@@ -62,10 +62,12 @@ import static java.lang.classfile.ClassFile.ACC_PUBLIC;
 import static java.lang.constant.ConstantDescs.CD_Class;
 import static java.lang.constant.ConstantDescs.CD_Integer;
 import static java.lang.constant.ConstantDescs.CD_List;
+import static java.lang.constant.ConstantDescs.CD_Long;
 import static java.lang.constant.ConstantDescs.CD_Object;
 import static java.lang.constant.ConstantDescs.CD_String;
 import static java.lang.constant.ConstantDescs.CD_boolean;
 import static java.lang.constant.ConstantDescs.CD_int;
+import static java.lang.constant.ConstantDescs.CD_long;
 import static java.lang.constant.ConstantDescs.CD_void;
 import static java.lang.constant.ConstantDescs.INIT_NAME;
 import static org.bson.assertions.Assertions.assertNotNull;
@@ -173,7 +175,7 @@ public class GeneratedRecordCodecProvider implements CodecProvider {
                     cob -> {
                         cob
                                 .aload(thisSlot)
-                                .invokespecial(ConstantDescs.CD_Object,
+                                .invokespecial(CD_Object,
                                         INIT_NAME, ConstantDescs.MTD_void);
 
                         for (var componentModel : componentModels) {
@@ -228,9 +230,12 @@ public class GeneratedRecordCodecProvider implements CodecProvider {
 
                             if (componentModel.isNullable) {
                                 cob.astore(componentValueSlot);
-                            } else {
-                                // TODO: handle all primitive types
+                            } else if (componentModel.classDesc.equals(CD_int)) {
                                 cob.istore(componentValueSlot);
+                            } else if (componentModel.classDesc.equals(CD_long)) {
+                                cob.lstore(componentValueSlot);
+                            } else {
+                                throw new UnsupportedOperationException(componentModel.classDesc.toString());
                             }
                             // stack: []
                             if (componentModel.isNullable) {
@@ -254,14 +259,20 @@ public class GeneratedRecordCodecProvider implements CodecProvider {
                                     .aload(writerSlot);
 
                             // stack: [encoder context, encoder, writer]
-                            if (!componentModel.isNullable) {
-                                // TODO: handle other primitive types
+                            if (componentModel.isNullable) {
+                                cob.aload(componentValueSlot);
+                            } else if (componentModel.classDesc.equals(CD_int)) {
                                 cob
                                         .iload(componentValueSlot)
                                         .invokestatic(componentModel.wrapperClassDesc, "valueOf",
-                                                MethodTypeDesc.of(ConstantDescs.CD_Integer, List.of(componentModel.classDesc)));
+                                                MethodTypeDesc.of(CD_Integer, List.of(componentModel.classDesc)));
+                            } else if (componentModel.classDesc.equals(CD_long)) {
+                                cob
+                                        .lload(componentValueSlot)
+                                        .invokestatic(componentModel.wrapperClassDesc, "valueOf",
+                                                MethodTypeDesc.of(CD_Long, List.of(componentModel.classDesc)));
                             } else {
-                                cob.aload(componentValueSlot);
+                                throw new UnsupportedOperationException(componentModel.classDesc.toString());
                             }
                             // stack: [encoder context, encoder, writer, component value reference]
                             cob
@@ -282,7 +293,7 @@ public class GeneratedRecordCodecProvider implements CodecProvider {
 
             // generate bridge method
             clb.withMethodBody("encode",
-                    MethodTypeDesc.of(CD_void, bsonWriterClassDesc, ConstantDescs.CD_Object, encoderContextClassDesc),
+                    MethodTypeDesc.of(CD_void, bsonWriterClassDesc, CD_Object, encoderContextClassDesc),
                     ACC_PUBLIC,
                     cob -> cob
                             .aload(0)
@@ -299,24 +310,30 @@ public class GeneratedRecordCodecProvider implements CodecProvider {
             var methodTypeDesc = MethodTypeDesc.of(recordClassDesc, bsonReaderClassDesc, decoderContextClassDesc);
             var readerSlot = 1;
             var decoderContextSlot = 2;
-            var firstComponentValueSlot = 3;
-            var lastComponentValueSlot = firstComponentValueSlot + componentModels.size() - 1;
-            var nameSlot = lastComponentValueSlot + 1;
+            var nameSlot = 3;
+            var firstComponentValueSlot = 4;
             clb.withMethodBody("decode",
                     methodTypeDesc,
                     ACC_PUBLIC,
                     cob -> {
                         // create a local variable for each component
+                        int slot = firstComponentValueSlot;
                         for (var componentModel : componentModels) {
                             if (componentModel.isNullable) {
                                 cob
                                         .aconst_null()
-                                        .astore(firstComponentValueSlot + componentModel.index);
-                            } else {
-                                // TODO: support other primitives
+                                        .astore(slot++);
+                            } else if (componentModel.classDesc.equals(CD_int)) {
                                 cob
                                         .iconst_0()
-                                        .istore(firstComponentValueSlot + componentModel.index);
+                                        .istore(slot++);
+                            } else if (componentModel.classDesc.equals(CD_long)) {
+                                cob
+                                        .lconst_0()
+                                        .lstore(slot);
+                                slot += 2;
+                            } else {
+                                throw new UnsupportedOperationException(componentModel.classDesc.toString());
                             }
                         }
                         var startLoopLabel = cob.newLabel();
@@ -343,6 +360,7 @@ public class GeneratedRecordCodecProvider implements CodecProvider {
 
                         Label curBranchLabel;
                         Label nextBranchLabel = null;
+                        slot = firstComponentValueSlot;
                         for (var componentModel : componentModels) {
                             curBranchLabel = nextBranchLabel;
                             nextBranchLabel = cob.newLabel();
@@ -364,11 +382,16 @@ public class GeneratedRecordCodecProvider implements CodecProvider {
                                             MethodTypeDesc.of(CD_Object, decoderClassDesc, bsonReaderClassDesc))
                                     .checkcast(ClassDesc.of(componentModel.rawType.getName()));
                             if (componentModel.isNullable) {
-                                cob.astore(firstComponentValueSlot + componentModel.index);
-                            } else {
-                                // TODO: support other primitive types
+                                cob.astore(slot++);
+                            } else if (componentModel.classDesc.equals(CD_int)) {
                                 cob.invokevirtual(CD_Integer, "intValue", MethodTypeDesc.of(CD_int));
-                                cob.istore(firstComponentValueSlot + componentModel.index);
+                                cob.istore(slot++);
+                            } else if (componentModel.classDesc.equals(CD_long)) {
+                                cob.invokevirtual(CD_Long, "longValue", MethodTypeDesc.of(CD_long));
+                                cob.lstore(slot);
+                                slot += 2;
+                            } else {
+                                throw new UnsupportedOperationException(componentModel.classDesc.toString());
                             }
                             cob.goto_(endElseLabel);
                         }
@@ -392,12 +415,18 @@ public class GeneratedRecordCodecProvider implements CodecProvider {
                         cob
                                 .new_(recordClassDesc)
                                 .dup();
+
+                        slot = firstComponentValueSlot;
                         for (var componentModel : componentModels) {
                             if (componentModel.isNullable) {
-                                cob.aload(firstComponentValueSlot + componentModel.index);
+                                cob.aload(slot++);
+                            } else if (componentModel.classDesc.equals(CD_int)) {
+                                cob.iload(slot++);
+                            } else if (componentModel.classDesc.equals(CD_long)) {
+                                cob.lload(slot);
+                                slot += 2;
                             } else {
-                                // TODO: support other primitive types
-                                cob.iload(firstComponentValueSlot + componentModel.index);
+                                throw new UnsupportedOperationException(componentModel.classDesc.toString());
                             }
                         }
 
@@ -409,7 +438,7 @@ public class GeneratedRecordCodecProvider implements CodecProvider {
 
             // generate bridge method
             clb.withMethodBody("decode",
-                    MethodTypeDesc.of(ConstantDescs.CD_Object, bsonReaderClassDesc, decoderContextClassDesc),
+                    MethodTypeDesc.of(CD_Object, bsonReaderClassDesc, decoderContextClassDesc),
                     ACC_PUBLIC,
                     cob -> cob
                             .aload(0)
@@ -449,9 +478,9 @@ public class GeneratedRecordCodecProvider implements CodecProvider {
                 this.isNullable = !component.getType().isPrimitive();
                 // TODO: support all primitives
                 this.classDesc = component.getType().isPrimitive() ?
-                        ConstantDescs.CD_int : ClassDesc.of(component.getType().getName());
+                        getClassDescForPrimitive(component.getType()) : ClassDesc.of(component.getType().getName());
                 this.wrapperClassDesc = component.getType().isPrimitive() ?
-                        ConstantDescs.CD_Integer : classDesc;
+                        getWrapperClassDescForPrimitive(component.getType()) : classDesc;
                 this.rawType = toWrapper(resolveComponentType(typeParameters, component));
                 this.typeArguments = (component.getGenericType() instanceof ParameterizedType parameterizedType)
                         ? resolveActualTypeArguments(typeParameters, component.getDeclaringRecord(), parameterizedType)
@@ -459,6 +488,26 @@ public class GeneratedRecordCodecProvider implements CodecProvider {
                 this.bsonRepresentationType = isAnnotationPresentOnField(component, BsonRepresentation.class)
                         ? getAnnotationOnField(component, BsonRepresentation.class).value()
                         : null;
+            }
+
+            private static ClassDesc getClassDescForPrimitive(Class<?> type) {
+                if (type.equals(int.class)) {
+                    return CD_int;
+                } else if (type.equals(long.class)) {
+                    return CD_long;
+                } else {
+                    throw new UnsupportedOperationException("Unexpected value: " + type);
+                }
+            }
+
+            private static ClassDesc getWrapperClassDescForPrimitive(Class<?> type) {
+                if (type.equals(int.class)) {
+                    return CD_Integer;
+                } else if (type.equals(long.class)) {
+                    return CD_Long;
+                } else {
+                    throw new UnsupportedOperationException("Unexpected value: " + type);
+                }
             }
 
             private static Class<?> toWrapper(final Class<?> clazz) {

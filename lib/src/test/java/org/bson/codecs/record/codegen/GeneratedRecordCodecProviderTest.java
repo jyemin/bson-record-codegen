@@ -22,6 +22,7 @@ import org.bson.BsonDocumentReader;
 import org.bson.BsonDocumentWriter;
 import org.bson.BsonDouble;
 import org.bson.BsonInt32;
+import org.bson.BsonInt64;
 import org.bson.BsonObjectId;
 import org.bson.BsonString;
 import org.bson.codecs.Codec;
@@ -62,8 +63,11 @@ public class GeneratedRecordCodecProviderTest {
     void testRecordWithPrimitives() {
         assertRoundTrip(
                 TestRecordWithPrimitives.class,
-                new TestRecordWithPrimitives(42),
-                new BsonDocument("i", new BsonInt32(42)));
+                new TestRecordWithPrimitives(42, 24L, 12L, 24),
+                new BsonDocument("i", new BsonInt32(42))
+                        .append("l", new BsonInt64(24L))
+                        .append("l2", new BsonInt64(12L))
+                        .append("i2", new BsonInt32(24)));
     }
 
     @Test
