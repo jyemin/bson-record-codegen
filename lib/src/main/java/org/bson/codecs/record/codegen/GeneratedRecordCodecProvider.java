@@ -64,6 +64,7 @@ import static java.lang.constant.ConstantDescs.CD_List;
 import static java.lang.constant.ConstantDescs.CD_Object;
 import static java.lang.constant.ConstantDescs.CD_String;
 import static java.lang.constant.ConstantDescs.CD_boolean;
+import static java.lang.constant.ConstantDescs.CD_double;
 import static java.lang.constant.ConstantDescs.CD_int;
 import static java.lang.constant.ConstantDescs.CD_long;
 import static java.lang.constant.ConstantDescs.CD_void;
@@ -233,10 +234,14 @@ public class GeneratedRecordCodecProvider implements CodecProvider {
 
                             if (componentModel.isNullable) {
                                 cob.astore(componentValueSlot);
+                            } else if (componentModel.classDesc.equals(CD_boolean)) {
+                                cob.istore(componentValueSlot);
                             } else if (componentModel.classDesc.equals(CD_int)) {
                                 cob.istore(componentValueSlot);
                             } else if (componentModel.classDesc.equals(CD_long)) {
                                 cob.lstore(componentValueSlot);
+                            } else if (componentModel.classDesc.equals(CD_double)) {
+                                cob.dstore(componentValueSlot);
                             } else {
                                 throw new UnsupportedOperationException(componentModel.classDesc.toString());
                             }
@@ -263,6 +268,11 @@ public class GeneratedRecordCodecProvider implements CodecProvider {
                                         // stack: [encoder context, encoder, writer, component value reference]
                                         .invokevirtual(encoderContextClassDesc, "encodeWithChildContext",
                                                 MethodTypeDesc.of(CD_void, encoderClassDesc, bsonWriterClassDesc, CD_Object));
+                            } else if (componentModel.classDesc.equals(CD_boolean)) {
+                                cob
+                                        .aload(writerSlot)
+                                        .iload(componentValueSlot)
+                                        .invokeinterface(bsonWriterClassDesc, "writeBoolean", MethodTypeDesc.of(CD_void, CD_boolean));
                             } else if (componentModel.classDesc.equals(CD_int)) {
                                 cob
                                         .aload(writerSlot)
@@ -273,6 +283,11 @@ public class GeneratedRecordCodecProvider implements CodecProvider {
                                         .aload(writerSlot)
                                         .lload(componentValueSlot)
                                         .invokeinterface(bsonWriterClassDesc, "writeInt64", MethodTypeDesc.of(CD_void, CD_long));
+                            } else if (componentModel.classDesc.equals(CD_double)) {
+                                cob
+                                        .aload(writerSlot)
+                                        .dload(componentValueSlot)
+                                        .invokeinterface(bsonWriterClassDesc, "writeDouble", MethodTypeDesc.of(CD_void, CD_double));
                             } else {
                                 throw new UnsupportedOperationException(componentModel.classDesc.toString());
                             }
@@ -321,6 +336,10 @@ public class GeneratedRecordCodecProvider implements CodecProvider {
                                 cob
                                         .aconst_null()
                                         .astore(slot++);
+                            } else if (componentModel.classDesc.equals(CD_boolean)) {
+                                cob
+                                        .iconst_0()
+                                        .istore(slot++);
                             } else if (componentModel.classDesc.equals(CD_int)) {
                                 cob
                                         .iconst_0()
@@ -329,6 +348,11 @@ public class GeneratedRecordCodecProvider implements CodecProvider {
                                 cob
                                         .lconst_0()
                                         .lstore(slot);
+                                slot += 2;
+                            } else if (componentModel.classDesc.equals(CD_double)) {
+                                cob
+                                        .dconst_0()
+                                        .dstore(slot);
                                 slot += 2;
                             } else {
                                 throw new UnsupportedOperationException(componentModel.classDesc.toString());
@@ -382,6 +406,11 @@ public class GeneratedRecordCodecProvider implements CodecProvider {
                                                 MethodTypeDesc.of(CD_Object, decoderClassDesc, bsonReaderClassDesc))
                                         .checkcast(ClassDesc.of(componentModel.rawType.getName()))
                                         .astore(slot++);
+                            } else if (componentModel.classDesc.equals(CD_boolean)) {
+                                cob
+                                        .aload(readerSlot)
+                                        .invokeinterface(bsonReaderClassDesc, "readBoolean", MethodTypeDesc.of(CD_boolean))
+                                        .istore(slot++);
                             } else if (componentModel.classDesc.equals(CD_int)) {
                                 cob
                                         .aload(readerSlot)
@@ -392,6 +421,12 @@ public class GeneratedRecordCodecProvider implements CodecProvider {
                                         .aload(readerSlot)
                                         .invokeinterface(bsonReaderClassDesc, "readInt64", MethodTypeDesc.of(CD_long))
                                         .lstore(slot);
+                                slot += 2;
+                            } else if (componentModel.classDesc.equals(CD_double)) {
+                                cob
+                                        .aload(readerSlot)
+                                        .invokeinterface(bsonReaderClassDesc, "readDouble", MethodTypeDesc.of(CD_double))
+                                        .dstore(slot);
                                 slot += 2;
                             } else {
                                 throw new UnsupportedOperationException(componentModel.classDesc.toString());
@@ -423,10 +458,15 @@ public class GeneratedRecordCodecProvider implements CodecProvider {
                         for (var componentModel : componentModels) {
                             if (componentModel.isNullable) {
                                 cob.aload(slot++);
+                            } else if (componentModel.classDesc.equals(CD_boolean)) {
+                                cob.iload(slot++);
                             } else if (componentModel.classDesc.equals(CD_int)) {
                                 cob.iload(slot++);
                             } else if (componentModel.classDesc.equals(CD_long)) {
                                 cob.lload(slot);
+                                slot += 2;
+                            } else if (componentModel.classDesc.equals(CD_double)) {
+                                cob.dload(slot);
                                 slot += 2;
                             } else {
                                 throw new UnsupportedOperationException(componentModel.classDesc.toString());
@@ -489,10 +529,14 @@ public class GeneratedRecordCodecProvider implements CodecProvider {
             }
 
             private static ClassDesc getClassDescForPrimitive(Class<?> type) {
-                if (type.equals(int.class)) {
+                if (type.equals(boolean.class)) {
+                    return CD_boolean;
+                } else if (type.equals(int.class)) {
                     return CD_int;
                 } else if (type.equals(long.class)) {
                     return CD_long;
+                } else if (type.equals(double.class)) {
+                    return CD_double;
                 } else {
                     throw new UnsupportedOperationException("Unexpected value: " + type);
                 }

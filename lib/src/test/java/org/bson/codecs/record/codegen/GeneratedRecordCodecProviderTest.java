@@ -17,6 +17,7 @@
 package org.bson.codecs.record.codegen;
 
 import org.bson.BsonArray;
+import org.bson.BsonBoolean;
 import org.bson.BsonDocument;
 import org.bson.BsonDocumentReader;
 import org.bson.BsonDocumentWriter;
@@ -63,11 +64,15 @@ public class GeneratedRecordCodecProviderTest {
     void testRecordWithPrimitives() {
         assertRoundTrip(
                 TestRecordWithPrimitives.class,
-                new TestRecordWithPrimitives(42, 24L, 12L, 24),
-                new BsonDocument("i", new BsonInt32(42))
-                        .append("l", new BsonInt64(24L))
+                new TestRecordWithPrimitives(42, 24L, 12L, 24, 34.3, true, 65.1, false),
+                new BsonDocument("i1", new BsonInt32(42))
+                        .append("l1", new BsonInt64(24L))
                         .append("l2", new BsonInt64(12L))
-                        .append("i2", new BsonInt32(24)));
+                        .append("i2", new BsonInt32(24))
+                        .append("d1", new BsonDouble(34.3))
+                        .append("b1", new BsonBoolean(true))
+                        .append("d2", new BsonDouble(65.1))
+                        .append("b2", new BsonBoolean(false)));
     }
 
     @Test

@@ -16,5 +16,5 @@
 
 package org.bson.codecs.record.codegen;
 
-public record TestRecordWithPrimitives(int i, long l, long l2, int i2) {
+public record TestRecordWithPrimitives(int i1, long l1, long l2, int i2, double d1, boolean b1, double d2, boolean b2) {
 }
