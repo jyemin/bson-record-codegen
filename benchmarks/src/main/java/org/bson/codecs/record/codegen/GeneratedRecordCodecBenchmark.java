@@ -2,14 +2,17 @@ package org.bson.codecs.record.codegen;
 
 import org.bson.BsonBinaryReader;
 import org.bson.BsonBinaryWriter;
+import org.bson.BsonDocument;
+import org.bson.BsonInt32;
+import org.bson.BsonInt64;
+import org.bson.Document;
 import org.bson.codecs.Codec;
 import org.bson.codecs.DecoderContext;
 import org.bson.codecs.EncoderContext;
 import org.bson.codecs.configuration.CodecRegistries;
 import org.bson.codecs.record.RecordCodecProvider;
-import org.bson.codecs.record.records.SimpleRecord;
+import org.bson.codecs.record.records.SimpleRecordWithPrimitives;
 import org.bson.io.BasicOutputBuffer;
-import org.bson.types.ObjectId;
 import org.openjdk.jmh.annotations.Benchmark;
 import org.openjdk.jmh.annotations.BenchmarkMode;
 import org.openjdk.jmh.annotations.Fork;
@@ -24,7 +27,6 @@ import org.openjdk.jmh.annotations.Warmup;
 import org.openjdk.jmh.infra.Blackhole;
 
 import java.nio.ByteBuffer;
-import java.util.List;
 import java.util.concurrent.TimeUnit;
 
 import static org.bson.conversions.Bson.DEFAULT_CODEC_REGISTRY;
@@ -38,9 +40,13 @@ public class GeneratedRecordCodecBenchmark {
 
     @State(Scope.Benchmark)
     public static class Input {
-        private SimpleRecord simpleRecord;
-        private Codec<SimpleRecord> generatedRecordCodec;
-        private Codec<SimpleRecord> reflectiveRecordCodec;
+        private SimpleRecordWithPrimitives simpleRecord;
+        private Document simpleDocument;
+        private BsonDocument simpleBsonDocument;
+        private Codec<SimpleRecordWithPrimitives> generatedRecordCodec;
+        private Codec<SimpleRecordWithPrimitives> reflectiveRecordCodec;
+        private Codec<Document> documentCodec;
+        private Codec<BsonDocument> bsonDocumentCodec;
         private byte[] documentBytes;
         private BsonBinaryReader reader;
         private BsonBinaryWriter writer;
@@ -49,13 +55,19 @@ public class GeneratedRecordCodecBenchmark {
         public void setup() {
             generatedRecordCodec = CodecRegistries.fromProviders(
                     DEFAULT_CODEC_REGISTRY, new GeneratedRecordCodecProvider())
-                    .get(SimpleRecord.class);
+                    .get(SimpleRecordWithPrimitives.class);
 
             reflectiveRecordCodec = CodecRegistries.fromProviders(
                     DEFAULT_CODEC_REGISTRY, new RecordCodecProvider())
-                    .get(SimpleRecord.class);
+                    .get(SimpleRecordWithPrimitives.class);
 
-            simpleRecord = new SimpleRecord(ObjectId.get(), "Adrian", 42, List.of("viola", "soccer"));
+            documentCodec = DEFAULT_CODEC_REGISTRY.get(Document.class);
+            bsonDocumentCodec = DEFAULT_CODEC_REGISTRY.get(BsonDocument.class);
+
+            simpleRecord = new SimpleRecordWithPrimitives(1, 2, 3, 4);
+            simpleDocument = new Document("i1", 1).append("i2", 2).append("l1", 3L).append("l2", 4L);
+            simpleBsonDocument = new BsonDocument("i1", new BsonInt32(1)).append("i2", new BsonInt32(2))
+                    .append("l1", new BsonInt64(3)).append("l2", new BsonInt64(4));
 
             BasicOutputBuffer buffer = new BasicOutputBuffer();
             reflectiveRecordCodec.encode(new BsonBinaryWriter(buffer), simpleRecord, EncoderContext.builder().build());
@@ -89,6 +101,28 @@ public class GeneratedRecordCodecBenchmark {
     @Benchmark
     public void decodeWithReflective(Input input, Blackhole blackhole) {
         blackhole.consume(input.reflectiveRecordCodec.decode(input.reader, DecoderContext.builder().build()));
+    }
+
+    @Benchmark
+    public void encodeWithDocument(Input input, Blackhole blackhole) {
+        input.documentCodec.encode(input.writer, input.simpleDocument, EncoderContext.builder().build());
+        blackhole.consume(input);
+    }
+
+    @Benchmark
+    public void decodeWithDocument(Input input, Blackhole blackhole) {
+        blackhole.consume(input.documentCodec.decode(input.reader, DecoderContext.builder().build()));
+    }
+
+    @Benchmark
+    public void encodeWithBsonDocument(Input input, Blackhole blackhole) {
+        input.bsonDocumentCodec.encode(input.writer, input.simpleBsonDocument, EncoderContext.builder().build());
+        blackhole.consume(input);
+    }
+
+    @Benchmark
+    public void decodeWithBsonDocument(Input input, Blackhole blackhole) {
+        blackhole.consume(input.bsonDocumentCodec.decode(input.reader, DecoderContext.builder().build()));
     }
 
 }
