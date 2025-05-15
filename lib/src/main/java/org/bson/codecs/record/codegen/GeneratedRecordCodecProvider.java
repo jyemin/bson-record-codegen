@@ -34,6 +34,7 @@ import org.bson.codecs.pojo.annotations.BsonId;
 import org.bson.codecs.pojo.annotations.BsonIgnore;
 import org.bson.codecs.pojo.annotations.BsonProperty;
 import org.bson.codecs.pojo.annotations.BsonRepresentation;
+import org.bson.internal.NumberCodecHelper;
 
 import java.lang.annotation.Annotation;
 import java.lang.classfile.ClassBuilder;
@@ -96,6 +97,7 @@ public class GeneratedRecordCodecProvider implements CodecProvider {
         private static final ClassDesc bsonReaderClassDesc = ClassDesc.of(BsonReader.class.getName());
         private static final ClassDesc decoderContextClassDesc = ClassDesc.of(DecoderContext.class.getName());
         private static final ClassDesc decoderClassDesc = ClassDesc.of(Decoder.class.getName());
+        private static final ClassDesc numberCodecHelperClassDesc = ClassDesc.of(NumberCodecHelper.class.getName());
 
         private static final int thisSlot = 0;
 
@@ -414,18 +416,18 @@ public class GeneratedRecordCodecProvider implements CodecProvider {
                             } else if (componentModel.classDesc.equals(CD_int)) {
                                 cob
                                         .aload(readerSlot)
-                                        .invokeinterface(bsonReaderClassDesc, "readInt32", MethodTypeDesc.of(CD_int))
+                                        .invokestatic(numberCodecHelperClassDesc, "decodeInt", MethodTypeDesc.of(CD_int, bsonReaderClassDesc))
                                         .istore(slot++);
                             } else if (componentModel.classDesc.equals(CD_long)) {
                                 cob
                                         .aload(readerSlot)
-                                        .invokeinterface(bsonReaderClassDesc, "readInt64", MethodTypeDesc.of(CD_long))
+                                        .invokestatic(numberCodecHelperClassDesc, "decodeLong", MethodTypeDesc.of(CD_long, bsonReaderClassDesc))
                                         .lstore(slot);
                                 slot += 2;
                             } else if (componentModel.classDesc.equals(CD_double)) {
                                 cob
                                         .aload(readerSlot)
-                                        .invokeinterface(bsonReaderClassDesc, "readDouble", MethodTypeDesc.of(CD_double))
+                                        .invokestatic(numberCodecHelperClassDesc, "decodeDouble", MethodTypeDesc.of(CD_double, bsonReaderClassDesc))
                                         .dstore(slot);
                                 slot += 2;
                             } else {
