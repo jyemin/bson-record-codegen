@@ -11,6 +11,6 @@ plugins {
     id("org.gradle.toolchains.foojay-resolver-convention") version "0.10.0"
 }
 
-rootProject.name = "mongo-java-driver-codegen"
+rootProject.name = "bson-record-codegen"
 include("lib")
 include("benchmarks")
