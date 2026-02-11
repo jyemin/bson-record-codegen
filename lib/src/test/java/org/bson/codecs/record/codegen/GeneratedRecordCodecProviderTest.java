@@ -36,6 +36,7 @@ import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 
 import java.util.List;
+import java.util.Map;
 
 import static org.bson.conversions.Bson.DEFAULT_CODEC_REGISTRY;
 import static org.junit.jupiter.api.Assertions.assertEquals;
@@ -96,6 +97,87 @@ public class GeneratedRecordCodecProviderTest {
                                         .append("parameterizedList",
                                                 new BsonArray(List.of(
                                                         new BsonDocument("name", new BsonString("n1")))))));
+    }
+
+    @Test
+    void testRecordWithMapOfRecords() {
+        ObjectId id = new ObjectId();
+        assertRoundTrip(TestRecordWithMapOfRecords.class,
+                new TestRecordWithMapOfRecords(id,
+                        Map.of("first", new TestRecordEmbedded("embedded"))),
+                new BsonDocument("_id", new BsonObjectId(id))
+                        .append("nestedRecords",
+                                new BsonDocument("first",
+                                        new BsonDocument("name", new BsonString("embedded")))));
+    }
+
+    @Test
+    void testRecordWithMapOfListOfRecords() {
+        ObjectId id = new ObjectId();
+        assertRoundTrip(TestRecordWithMapOfListOfRecords.class,
+                new TestRecordWithMapOfListOfRecords(id,
+                        Map.of("first", List.of(new TestRecordEmbedded("embedded")))),
+                new BsonDocument("_id", new BsonObjectId(id))
+                        .append("nestedRecords",
+                                new BsonDocument("first",
+                                        new BsonArray(List.of(
+                                                new BsonDocument("name", new BsonString("embedded")))))));
+    }
+
+    // Tier 1 - Essential
+    @Test
+    void testRecordWithListOfListOfRecords() {
+        ObjectId id = new ObjectId();
+        assertRoundTrip(TestRecordWithListOfListOfRecords.class,
+                new TestRecordWithListOfListOfRecords(id,
+                        List.of(List.of(new TestRecordEmbedded("embedded")))),
+                new BsonDocument("_id", new BsonObjectId(id))
+                        .append("nestedRecords",
+                                new BsonArray(List.of(
+                                        new BsonArray(List.of(
+                                                new BsonDocument("name", new BsonString("embedded"))))))));
+    }
+
+    // Tier 2 - Important
+    @Test
+    void testRecordWithMapOfMapOfRecords() {
+        ObjectId id = new ObjectId();
+        assertRoundTrip(TestRecordWithMapOfMapOfRecords.class,
+                new TestRecordWithMapOfMapOfRecords(id,
+                        Map.of("outer", Map.of("inner", new TestRecordEmbedded("embedded")))),
+                new BsonDocument("_id", new BsonObjectId(id))
+                        .append("nestedRecords",
+                                new BsonDocument("outer",
+                                        new BsonDocument("inner",
+                                                new BsonDocument("name", new BsonString("embedded"))))));
+    }
+
+    // Tier 3 - Edge cases
+    @Test
+    void testRecordWithListOfMapOfRecords() {
+        ObjectId id = new ObjectId();
+        assertRoundTrip(TestRecordWithListOfMapOfRecords.class,
+                new TestRecordWithListOfMapOfRecords(id,
+                        List.of(Map.of("key", new TestRecordEmbedded("embedded")))),
+                new BsonDocument("_id", new BsonObjectId(id))
+                        .append("nestedRecords",
+                                new BsonArray(List.of(
+                                        new BsonDocument("key",
+                                                new BsonDocument("name", new BsonString("embedded")))))));
+    }
+
+    @Test
+    void testRecordWithListOfListOfListOfRecords() {
+        ObjectId id = new ObjectId();
+        assertRoundTrip(TestRecordWithListOfListOfListOfRecords.class,
+                new TestRecordWithListOfListOfListOfRecords(id,
+                        List.of(List.of(List.of(new TestRecordEmbedded("embedded"))))),
+                new BsonDocument("_id", new BsonObjectId(id))
+                        .append("nestedRecords",
+                                new BsonArray(List.of(
+                                        new BsonArray(List.of(
+                                                new BsonArray(List.of(
+                                                        new BsonDocument("name", new BsonString("embedded"))))))))));
     }
 
     private <T> void assertRoundTrip(Class<T> recordClass, T record, BsonDocument expectedDocument) {

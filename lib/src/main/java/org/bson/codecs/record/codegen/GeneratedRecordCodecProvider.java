@@ -53,7 +53,6 @@ import java.lang.reflect.Type;
 import java.lang.reflect.TypeVariable;
 import java.util.ArrayList;
 import java.util.Arrays;
-import java.util.Collections;
 import java.util.List;
 
 import static java.lang.String.format;
@@ -128,9 +127,18 @@ public class GeneratedRecordCodecProvider implements CodecProvider {
             var loader = new ByteArrayClassLoader();
             var clazz = loader.defineClass(null, bytes);
 
+            // Create a map of component names to their type arguments
+            var typeArgumentsMap = new java.util.HashMap<String, List<Type>>();
+            for (var componentModel : componentModels) {
+                if (!componentModel.typeArguments.isEmpty()) {
+                    typeArgumentsMap.put(componentModel.name, componentModel.typeArguments);
+                }
+            }
+
             try {
                 //noinspection unchecked
-                return (Codec<T>) clazz.getDeclaredConstructor(CodecRegistry.class).newInstance(registry);
+                return (Codec<T>) clazz.getDeclaredConstructor(CodecRegistry.class, java.util.Map.class)
+                        .newInstance(registry, typeArgumentsMap);
             } catch (InstantiationException | IllegalAccessException | InvocationTargetException |
                      NoSuchMethodException e) {
                 throw new RuntimeException(e);
@@ -153,6 +161,9 @@ public class GeneratedRecordCodecProvider implements CodecProvider {
         }
 
         private void generateFields(ClassBuilder clb) {
+            // Field to store the type arguments map
+            clb.withField("typeArgumentsMap", ClassDesc.of(java.util.Map.class.getName()), ACC_PRIVATE | ACC_FINAL);
+
             for (var componentModel : componentModels) {
                 if (componentModel.isNullable) {
                     clb.withField(componentModel.name + "Codec",
@@ -171,15 +182,23 @@ public class GeneratedRecordCodecProvider implements CodecProvider {
         private void generateConstructor(ClassBuilder clb) {
             var codecClassDesc = ClassDesc.of(Codec.class.getName());
             var codecRegistryClassDesc = ClassDesc.of(CodecRegistry.class.getName());
+            var mapClassDesc = ClassDesc.of(java.util.Map.class.getName());
             int codeRegistrySlot = 1;
+            int typeArgumentsMapSlot = 2;
             clb.withMethodBody(INIT_NAME,
-                    MethodTypeDesc.of(CD_void, codecRegistryClassDesc),
+                    MethodTypeDesc.of(CD_void, codecRegistryClassDesc, mapClassDesc),
                     ACC_PUBLIC,
                     cob -> {
                         cob
                                 .aload(thisSlot)
                                 .invokespecial(CD_Object,
                                         INIT_NAME, ConstantDescs.MTD_void);
+
+                        // Store the type arguments map
+                        cob
+                                .aload(thisSlot)
+                                .aload(typeArgumentsMapSlot)
+                                .putfield(recordCodecClassDesc, "typeArgumentsMap", mapClassDesc);
 
                         for (var componentModel : componentModels) {
                             if (!componentModel.isNullable) {
@@ -193,13 +212,13 @@ public class GeneratedRecordCodecProvider implements CodecProvider {
                                 cob
                                         .invokeinterface(codecRegistryClassDesc, "get", MethodTypeDesc.of(codecClassDesc, CD_Class));
                             } else {
-                                for (var typeArgument : componentModel.typeArguments) {
-                                    // TODO: these won't all be Class instances
-                                    Class<?> typeArgumentClass = (Class<?>) typeArgument;
-                                    cob.ldc(ClassDesc.of(typeArgumentClass.getName()));
-                                }
-                                cob.invokestatic(CD_List, "of", MethodTypeDesc.of(CD_List,
-                                        Collections.nCopies(componentModel.typeArguments.size(), CD_Object)), true);
+                                // Get the type arguments from the map: typeArgumentsMap.get(componentName)
+                                cob
+                                        .aload(thisSlot)
+                                        .getfield(recordCodecClassDesc, "typeArgumentsMap", mapClassDesc)
+                                        .ldc(componentModel.name)
+                                        .invokeinterface(mapClassDesc, "get", MethodTypeDesc.of(CD_Object, CD_Object))
+                                        .checkcast(CD_List);
                                 cob.invokeinterface(codecRegistryClassDesc, "get", MethodTypeDesc.of(codecClassDesc, CD_Class, CD_List));
                             }
                             cob
@@ -584,7 +603,6 @@ public class GeneratedRecordCodecProvider implements CodecProvider {
                         : type;
             }
 
-            // Get
             private static int getIndexOfTypeParameter(final String typeParameterName, final Class<?> recordClass) {
                 var typeParameters = recordClass.getTypeParameters();
                 for (int i = 0; i < typeParameters.length; i++) {
