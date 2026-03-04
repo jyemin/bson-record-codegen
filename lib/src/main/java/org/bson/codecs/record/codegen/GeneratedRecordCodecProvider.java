@@ -44,6 +44,7 @@ import java.lang.classfile.ClassBuilder;
 import java.lang.classfile.ClassFile;
 import java.lang.classfile.CodeBuilder;
 import java.lang.classfile.Label;
+import java.lang.classfile.instruction.SwitchCase;
 import java.lang.classfile.TypeKind;
 import java.lang.constant.ClassDesc;
 import java.lang.constant.ConstantDescs;
@@ -503,22 +504,62 @@ public class GeneratedRecordCodecProvider implements CodecProvider {
                                 .invokeinterface(bsonReaderClassDesc, "readName", MethodTypeDesc.of(CD_String))
                                 .astore(nameSlot);
 
-                        Label curBranchLabel;
-                        Label nextBranchLabel = null;
+                        // Build hash-based switch for field name matching
+                        // Group components by their field name's hashCode (sorted for deterministic lookupswitch)
+                        var componentsByHash = new java.util.TreeMap<Integer, java.util.List<ComponentModel>>();
+                        for (var componentModel : componentModels) {
+                            componentsByHash.computeIfAbsent(componentModel.fieldName.hashCode(), k -> new java.util.ArrayList<>())
+                                    .add(componentModel);
+                        }
+
+                        // Create labels for each hash bucket
+                        var hashLabels = new java.util.HashMap<Integer, Label>();
+                        for (var hash : componentsByHash.keySet()) {
+                            hashLabels.put(hash, cob.newLabel());
+                        }
+                        var skipValueLabel = cob.newLabel();
+
+                        // Generate the lookupswitch on name.hashCode()
+                        var switchCases = componentsByHash.keySet().stream()
+                                .map(hash -> SwitchCase.of(hash, hashLabels.get(hash)))
+                                .toList();
+                        cob
+                                .aload(nameSlot)
+                                .invokevirtual(CD_String, "hashCode", MethodTypeDesc.of(CD_int))
+                                .lookupswitch(skipValueLabel, switchCases);
+
+                        // Generate code for each hash bucket
+                        // We need to track slot offsets for each component
+                        var componentSlots = new java.util.HashMap<ComponentModel, Integer>();
                         slot = firstComponentValueSlot;
                         for (var componentModel : componentModels) {
-                            curBranchLabel = nextBranchLabel;
-                            nextBranchLabel = cob.newLabel();
-                            if (curBranchLabel != null) {
-                                cob.labelBinding(curBranchLabel);
+                            componentSlots.put(componentModel, slot);
+                            if (componentModel.classDesc.equals(CD_long) || componentModel.classDesc.equals(CD_double)) {
+                                slot += 2;
+                            } else {
+                                slot += 1;
                             }
-                            cob
-                                    .aload(nameSlot)
-                                    .ldc(clb.constantPool().stringEntry(componentModel.fieldName))
-                                    .invokevirtual(CD_String, "equals", MethodTypeDesc.of(CD_boolean, CD_Object));
+                        }
 
-                            cob
-                                    .ifeq(nextBranchLabel);
+                        for (var entry : componentsByHash.entrySet()) {
+                            var hash = entry.getKey();
+                            var bucket = entry.getValue();
+                            cob.labelBinding(hashLabels.get(hash));
+
+                            for (int i = 0; i < bucket.size(); i++) {
+                                var componentModel = bucket.get(i);
+                                var isLast = (i == bucket.size() - 1);
+                                var nextCheckLabel = isLast ? skipValueLabel : cob.newLabel();
+
+                                // Check if name.equals(fieldName)
+                                cob
+                                        .aload(nameSlot)
+                                        .ldc(clb.constantPool().stringEntry(componentModel.fieldName))
+                                        .invokevirtual(CD_String, "equals", MethodTypeDesc.of(CD_boolean, CD_Object))
+                                        .ifeq(nextCheckLabel);
+
+                                // Field matched - generate decode code
+                                slot = componentSlots.get(componentModel);
 
                             // Check for BsonType.NULL
                             var notNullLabel = cob.newLabel();
@@ -603,10 +644,16 @@ public class GeneratedRecordCodecProvider implements CodecProvider {
                                 throw new UnsupportedOperationException(componentModel.classDesc.toString());
                             }
                             cob.goto_(endElseLabel);
+
+                                // Bind label for next check in bucket (or fall through to skipValue)
+                                if (!isLast) {
+                                    cob.labelBinding(nextCheckLabel);
+                                }
+                            }
                         }
 
                         cob
-                                .labelBinding(nextBranchLabel)
+                                .labelBinding(skipValueLabel)
                                 .aload(readerSlot)
                                 .invokeinterface(bsonReaderClassDesc, "skipValue", MethodTypeDesc.of(CD_void))
                                 .labelBinding(endElseLabel);
