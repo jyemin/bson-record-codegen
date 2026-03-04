@@ -26,5 +26,42 @@ tasks.register<JavaExec>("jmh") {
     description = "Run JMH benchmarks."
     mainClass = "org.openjdk.jmh.Main"
     classpath = sourceSets.main.get().runtimeClasspath
+    javaLauncher = javaToolchains.launcherFor {
+        languageVersion = JavaLanguageVersion.of(24)
+    }
+    args = listOf("-f", "1", "-wi", "3", "-i", "5")
+}
+
+tasks.register<JavaExec>("jmhProfile") {
+    group = "benchmark"
+    description = "Run JMH benchmarks with stack profiler."
+    mainClass = "org.openjdk.jmh.Main"
+    classpath = sourceSets.main.get().runtimeClasspath
+    javaLauncher = javaToolchains.launcherFor {
+        languageVersion = JavaLanguageVersion.of(24)
+    }
+    args = listOf("-f", "1", "-wi", "2", "-i", "3", "-prof", "stack:lines=10;detailLine=true", "decode")
+}
+
+tasks.register<JavaExec>("jmhLarge") {
+    group = "benchmark"
+    description = "Run JMH benchmarks for LargeRecord."
+    mainClass = "org.openjdk.jmh.Main"
+    classpath = sourceSets.main.get().runtimeClasspath
+    javaLauncher = javaToolchains.launcherFor {
+        languageVersion = JavaLanguageVersion.of(24)
+    }
+    args = listOf("-f", "1", "-wi", "3", "-i", "5", "LargeRecord")
+}
+
+tasks.register<JavaExec>("jmhLargeProfile") {
+    group = "benchmark"
+    description = "Run JMH benchmarks for LargeRecord with profiler."
+    mainClass = "org.openjdk.jmh.Main"
+    classpath = sourceSets.main.get().runtimeClasspath
+    javaLauncher = javaToolchains.launcherFor {
+        languageVersion = JavaLanguageVersion.of(24)
+    }
+    args = listOf("-f", "1", "-wi", "2", "-i", "3", "-prof", "stack:lines=10;detailLine=true", "LargeRecord.*decode")
 }
 

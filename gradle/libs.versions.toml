@@ -2,7 +2,7 @@
 # https://docs.gradle.org/current/userguide/platforms.html#sub::toml-dependencies-format
 
 [versions]
-bson = "5.5.0"
+bson = "5.6.4"
 jmh = "1.37"
 
 
