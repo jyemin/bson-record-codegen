@@ -40,6 +40,7 @@ import org.bson.internal.NumberCodecHelper;
 import java.lang.annotation.Annotation;
 import java.lang.classfile.ClassBuilder;
 import java.lang.classfile.ClassFile;
+import java.lang.classfile.CodeBuilder;
 import java.lang.classfile.Label;
 import java.lang.classfile.TypeKind;
 import java.lang.constant.ClassDesc;
@@ -293,78 +294,26 @@ public class GeneratedRecordCodecProvider implements CodecProvider {
                                 .aload(writerSlot)
                                 .invokeinterface(bsonWriterClassDesc, "writeStartDocument", MethodTypeDesc.of(CD_void));
 
+                        // Find the _id component (if any) and write it first
+                        ComponentModel idComponent = null;
                         for (var componentModel : componentModels) {
-                            var l0 = cob.newLabel();
-                            var recordComponentMtd = MethodTypeDesc.of(componentModel.classDesc);
+                            if ("_id".equals(componentModel.fieldName)) {
+                                idComponent = componentModel;
+                                break;
+                            }
+                        }
 
-                            cob
-                                    .aload(recordClassSlot)
-                                    .invokevirtual(recordClassDesc, componentModel.name, recordComponentMtd);
+                        // Write _id first if present
+                        if (idComponent != null) {
+                            generateEncodeComponent(clb, cob, idComponent, writerSlot, recordClassSlot, encoderContextSlot, componentValueSlot);
+                        }
 
-                            if (componentModel.isNullable) {
-                                cob.astore(componentValueSlot);
-                            } else if (componentModel.classDesc.equals(CD_boolean)) {
-                                cob.istore(componentValueSlot);
-                            } else if (componentModel.classDesc.equals(CD_int)) {
-                                cob.istore(componentValueSlot);
-                            } else if (componentModel.classDesc.equals(CD_long)) {
-                                cob.lstore(componentValueSlot);
-                            } else if (componentModel.classDesc.equals(CD_double)) {
-                                cob.dstore(componentValueSlot);
-                            } else {
-                                throw new UnsupportedOperationException(componentModel.classDesc.toString());
+                        // Write remaining components
+                        for (var componentModel : componentModels) {
+                            if (componentModel == idComponent) {
+                                continue; // Skip _id, already written
                             }
-                            // stack: []
-                            if (componentModel.isNullable) {
-                                cob
-                                        .aload(componentValueSlot)
-                                        .ifnull(l0);
-                            }
-                            cob
-                                    .aload(writerSlot)
-                                    .ldc(clb.constantPool().stringEntry(componentModel.fieldName))
-                                    // stack: [writer, field name]
-                                    .invokeinterface(bsonWriterClassDesc, "writeName",
-                                            MethodTypeDesc.of(CD_void, CD_String));
-                            // stack []
-                            if (componentModel.isNullable) {
-                                cob
-                                        .aload(encoderContextSlot)
-                                        .aload(thisSlot)
-                                        .getfield(recordCodecClassDesc, componentModel.name + "Codec", codecClassDesc)
-                                        .aload(writerSlot)
-                                        .aload(componentValueSlot)
-                                        // stack: [encoder context, encoder, writer, component value reference]
-                                        .invokevirtual(encoderContextClassDesc, "encodeWithChildContext",
-                                                MethodTypeDesc.of(CD_void, encoderClassDesc, bsonWriterClassDesc, CD_Object));
-                            } else if (componentModel.classDesc.equals(CD_boolean)) {
-                                cob
-                                        .aload(writerSlot)
-                                        .iload(componentValueSlot)
-                                        .invokeinterface(bsonWriterClassDesc, "writeBoolean", MethodTypeDesc.of(CD_void, CD_boolean));
-                            } else if (componentModel.classDesc.equals(CD_int)) {
-                                cob
-                                        .aload(writerSlot)
-                                        .iload(componentValueSlot)
-                                        .invokeinterface(bsonWriterClassDesc, "writeInt32", MethodTypeDesc.of(CD_void, CD_int));
-                            } else if (componentModel.classDesc.equals(CD_long)) {
-                                cob
-                                        .aload(writerSlot)
-                                        .lload(componentValueSlot)
-                                        .invokeinterface(bsonWriterClassDesc, "writeInt64", MethodTypeDesc.of(CD_void, CD_long));
-                            } else if (componentModel.classDesc.equals(CD_double)) {
-                                cob
-                                        .aload(writerSlot)
-                                        .dload(componentValueSlot)
-                                        .invokeinterface(bsonWriterClassDesc, "writeDouble", MethodTypeDesc.of(CD_void, CD_double));
-                            } else {
-                                throw new UnsupportedOperationException(componentModel.classDesc.toString());
-                            }
-                            // stack: []
-                            if (componentModel.isNullable) {
-                                cob
-                                        .labelBinding(l0);
-                            }
+                            generateEncodeComponent(clb, cob, componentModel, writerSlot, recordClassSlot, encoderContextSlot, componentValueSlot);
                         }
 
                         cob
@@ -386,6 +335,81 @@ public class GeneratedRecordCodecProvider implements CodecProvider {
                             .invokevirtual(recordCodecClassDesc, "encode", methodTypeDesc)
                             .return_()
             );
+        }
+
+        private void generateEncodeComponent(ClassBuilder clb, CodeBuilder cob, ComponentModel componentModel,
+                                             int writerSlot, int recordClassSlot, int encoderContextSlot, int componentValueSlot) {
+            var l0 = cob.newLabel();
+            var recordComponentMtd = MethodTypeDesc.of(componentModel.classDesc);
+
+            cob
+                    .aload(recordClassSlot)
+                    .invokevirtual(recordClassDesc, componentModel.name, recordComponentMtd);
+
+            if (componentModel.isNullable) {
+                cob.astore(componentValueSlot);
+            } else if (componentModel.classDesc.equals(CD_boolean)) {
+                cob.istore(componentValueSlot);
+            } else if (componentModel.classDesc.equals(CD_int)) {
+                cob.istore(componentValueSlot);
+            } else if (componentModel.classDesc.equals(CD_long)) {
+                cob.lstore(componentValueSlot);
+            } else if (componentModel.classDesc.equals(CD_double)) {
+                cob.dstore(componentValueSlot);
+            } else {
+                throw new UnsupportedOperationException(componentModel.classDesc.toString());
+            }
+            // stack: []
+            if (componentModel.isNullable) {
+                cob
+                        .aload(componentValueSlot)
+                        .ifnull(l0);
+            }
+            cob
+                    .aload(writerSlot)
+                    .ldc(clb.constantPool().stringEntry(componentModel.fieldName))
+                    // stack: [writer, field name]
+                    .invokeinterface(bsonWriterClassDesc, "writeName",
+                            MethodTypeDesc.of(CD_void, CD_String));
+            // stack []
+            if (componentModel.isNullable) {
+                cob
+                        .aload(encoderContextSlot)
+                        .aload(thisSlot)
+                        .getfield(recordCodecClassDesc, componentModel.name + "Codec", codecClassDesc)
+                        .aload(writerSlot)
+                        .aload(componentValueSlot)
+                        // stack: [encoder context, encoder, writer, component value reference]
+                        .invokevirtual(encoderContextClassDesc, "encodeWithChildContext",
+                                MethodTypeDesc.of(CD_void, encoderClassDesc, bsonWriterClassDesc, CD_Object));
+            } else if (componentModel.classDesc.equals(CD_boolean)) {
+                cob
+                        .aload(writerSlot)
+                        .iload(componentValueSlot)
+                        .invokeinterface(bsonWriterClassDesc, "writeBoolean", MethodTypeDesc.of(CD_void, CD_boolean));
+            } else if (componentModel.classDesc.equals(CD_int)) {
+                cob
+                        .aload(writerSlot)
+                        .iload(componentValueSlot)
+                        .invokeinterface(bsonWriterClassDesc, "writeInt32", MethodTypeDesc.of(CD_void, CD_int));
+            } else if (componentModel.classDesc.equals(CD_long)) {
+                cob
+                        .aload(writerSlot)
+                        .lload(componentValueSlot)
+                        .invokeinterface(bsonWriterClassDesc, "writeInt64", MethodTypeDesc.of(CD_void, CD_long));
+            } else if (componentModel.classDesc.equals(CD_double)) {
+                cob
+                        .aload(writerSlot)
+                        .dload(componentValueSlot)
+                        .invokeinterface(bsonWriterClassDesc, "writeDouble", MethodTypeDesc.of(CD_void, CD_double));
+            } else {
+                throw new UnsupportedOperationException(componentModel.classDesc.toString());
+            }
+            // stack: []
+            if (componentModel.isNullable) {
+                cob
+                        .labelBinding(l0);
+            }
         }
 
         private void generateDecodeMethod(ClassBuilder clb) {
