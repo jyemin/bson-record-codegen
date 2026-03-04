@@ -78,11 +78,12 @@ public class GeneratedRecordCodecProviderTest {
 
     @Test
     void testAnnotatedRecord() {
+        var identifier = new ObjectId();
         assertRoundTrip(AnnotatedRecord.class,
-                new AnnotatedRecord("Liz", 56, List.of("programming", "pottery"), "42"),
-                new BsonDocument("name", new BsonString("Liz")).append("a", new BsonInt32(56))
-                        .append("hobbies", new BsonArray(List.of(new BsonString("programming"), new BsonString("pottery"))))
-                        .append("_id", new BsonString("42")));
+                new AnnotatedRecord("Liz", 56, List.of("programming", "pottery"), identifier.toHexString()),
+                new BsonDocument("_id", new BsonObjectId(identifier))
+                        .append("name", new BsonString("Liz")).append("a", new BsonInt32(56))
+                        .append("hobbies", new BsonArray(List.of(new BsonString("programming"), new BsonString("pottery")))));
     }
 
     @Test

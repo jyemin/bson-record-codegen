@@ -24,6 +24,7 @@ import org.bson.codecs.Decoder;
 import org.bson.codecs.DecoderContext;
 import org.bson.codecs.Encoder;
 import org.bson.codecs.EncoderContext;
+import org.bson.codecs.RepresentationConfigurable;
 import org.bson.codecs.configuration.CodecConfigurationException;
 import org.bson.codecs.configuration.CodecProvider;
 import org.bson.codecs.configuration.CodecRegistry;
@@ -97,6 +98,8 @@ public class GeneratedRecordCodecProvider implements CodecProvider {
         private static final ClassDesc decoderContextClassDesc = ClassDesc.of(DecoderContext.class.getName());
         private static final ClassDesc decoderClassDesc = ClassDesc.of(Decoder.class.getName());
         private static final ClassDesc numberCodecHelperClassDesc = ClassDesc.of(NumberCodecHelper.class.getName());
+        private static final ClassDesc representationConfigurableClassDesc = ClassDesc.of(RepresentationConfigurable.class.getName());
+        private static final ClassDesc codecConfigurationExceptionClassDesc = ClassDesc.of(CodecConfigurationException.class.getName());
 
         private static final int thisSlot = 0;
 
@@ -221,6 +224,51 @@ public class GeneratedRecordCodecProvider implements CodecProvider {
                                         .checkcast(CD_List);
                                 cob.invokeinterface(codecRegistryClassDesc, "get", MethodTypeDesc.of(codecClassDesc, CD_Class, CD_List));
                             }
+                            // stack: [this, codec]
+
+                            // Apply @BsonRepresentation if present
+                            if (componentModel.bsonRepresentationType != null) {
+                                var elseLabel = cob.newLabel();
+                                var endLabel = cob.newLabel();
+
+                                cob
+                                        // stack: [this, codec]
+                                        .dup()
+                                        // stack: [this, codec, codec]
+                                        .instanceOf(representationConfigurableClassDesc)
+                                        // stack: [this, codec, boolean]
+                                        .ifeq(elseLabel)
+                                        // if branch: codec implements RepresentationConfigurable
+                                        // stack: [this, codec]
+                                        .checkcast(representationConfigurableClassDesc)
+                                        // stack: [this, RepresentationConfigurable]
+                                        .getstatic(bsonTypeClassDesc, componentModel.bsonRepresentationType.name(), bsonTypeClassDesc)
+                                        // stack: [this, RepresentationConfigurable, BsonType]
+                                        .invokeinterface(representationConfigurableClassDesc, "withRepresentation",
+                                                MethodTypeDesc.of(codecClassDesc, bsonTypeClassDesc))
+                                        // stack: [this, Codec]
+                                        .goto_(endLabel)
+                                        // else branch: codec does not implement RepresentationConfigurable
+                                        .labelBinding(elseLabel)
+                                        // stack: [this, codec]
+                                        .pop()
+                                        // stack: [this]
+                                        .pop()
+                                        // stack: []
+                                        .new_(codecConfigurationExceptionClassDesc)
+                                        // stack: [exception]
+                                        .dup()
+                                        // stack: [exception, exception]
+                                        .ldc(format("Codec for %s must implement RepresentationConfigurable to support BsonRepresentation",
+                                                componentModel.rawType.getName()))
+                                        // stack: [exception, exception, message]
+                                        .invokespecial(codecConfigurationExceptionClassDesc, INIT_NAME, MethodTypeDesc.of(CD_void, CD_String))
+                                        // stack: [exception]
+                                        .athrow()
+                                        .labelBinding(endLabel);
+                                // stack: [this, codec]
+                            }
+
                             cob
                                     .putfield(recordCodecClassDesc,
                                             componentModel.name + "Codec",
