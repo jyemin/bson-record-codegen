@@ -77,6 +77,21 @@ public class GeneratedRecordCodecProviderTest {
     }
 
     @Test
+    void testRecordWithAllPrimitives() {
+        assertRoundTrip(
+                TestRecordWithAllPrimitives.class,
+                new TestRecordWithAllPrimitives(true, (byte) 42, (short) 1000, 100000, 10000000000L, 3.14f, 2.718281828, 'X'),
+                new BsonDocument("booleanValue", new BsonBoolean(true))
+                        .append("byteValue", new BsonInt32(42))
+                        .append("shortValue", new BsonInt32(1000))
+                        .append("intValue", new BsonInt32(100000))
+                        .append("longValue", new BsonInt64(10000000000L))
+                        .append("floatValue", new BsonDouble(3.14f))
+                        .append("doubleValue", new BsonDouble(2.718281828))
+                        .append("charValue", new BsonString("X")));
+    }
+
+    @Test
     void testAnnotatedRecord() {
         var identifier = new ObjectId();
         assertRoundTrip(AnnotatedRecord.class,
