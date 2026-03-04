@@ -16,6 +16,7 @@
 
 package org.bson.codecs.record.codegen;
 
+import org.bson.BsonInvalidOperationException;
 import org.bson.BsonReader;
 import org.bson.BsonType;
 import org.bson.BsonWriter;
@@ -101,6 +102,7 @@ public class GeneratedRecordCodecProvider implements CodecProvider {
         private static final ClassDesc numberCodecHelperClassDesc = ClassDesc.of(NumberCodecHelper.class.getName());
         private static final ClassDesc representationConfigurableClassDesc = ClassDesc.of(RepresentationConfigurable.class.getName());
         private static final ClassDesc codecConfigurationExceptionClassDesc = ClassDesc.of(CodecConfigurationException.class.getName());
+        private static final ClassDesc bsonInvalidOperationExceptionClassDesc = ClassDesc.of(BsonInvalidOperationException.class.getName());
 
         private static final int thisSlot = 0;
 
@@ -489,6 +491,34 @@ public class GeneratedRecordCodecProvider implements CodecProvider {
 
                             cob
                                     .ifeq(nextBranchLabel);
+
+                            // Check for BsonType.NULL
+                            var notNullLabel = cob.newLabel();
+                            cob
+                                    .aload(readerSlot)
+                                    .invokeinterface(bsonReaderClassDesc, "getCurrentBsonType", MethodTypeDesc.of(bsonTypeClassDesc))
+                                    .getstatic(bsonTypeClassDesc, BsonType.NULL.name(), bsonTypeClassDesc)
+                                    .if_acmpne(notNullLabel);
+
+                            // Handle NULL value
+                            if (componentModel.isNullable) {
+                                // For nullable fields: just read the null and continue (value stays null)
+                                cob
+                                        .aload(readerSlot)
+                                        .invokeinterface(bsonReaderClassDesc, "readNull", MethodTypeDesc.of(CD_void))
+                                        .goto_(endElseLabel);
+                            } else {
+                                // For primitives: throw BsonInvalidOperationException
+                                cob
+                                        .new_(bsonInvalidOperationExceptionClassDesc)
+                                        .dup()
+                                        .ldc(format("Null value for non-nullable field: %s", componentModel.fieldName))
+                                        .invokespecial(bsonInvalidOperationExceptionClassDesc, INIT_NAME, MethodTypeDesc.of(CD_void, CD_String))
+                                        .athrow();
+                            }
+
+                            // Not null - decode normally
+                            cob.labelBinding(notNullLabel);
                             if (componentModel.isNullable) {
                                 cob
                                         .aload(decoderContextSlot)
